@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Apple,
@@ -24,9 +24,12 @@ import {
   Mic,
   Minus,
   MoreHorizontal,
+  Shuffle,
   Play,
   Plus,
+  Radio,
   RotateCcw,
+  Settings,
   Share2,
   ShieldCheck,
   SlidersHorizontal,
@@ -36,6 +39,8 @@ import {
   Trophy,
   Users,
   Video,
+  Volume2,
+  VolumeX,
   Zap
 } from "lucide-react";
 import { highlights, nearbyPlayers, opponent, recapStats, recentMatches, user } from "./data/mockData";
@@ -58,8 +63,28 @@ import "./styles.css";
 
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account" | "admin";
 type AuthPhase = "loading" | "signed-out" | "signed-in";
+type MatchMode = "setup" | "playing";
+type MatchOptions = {
+  customNames: boolean;
+  scorer: 0 | 1;
+  server: 0 | 1 | 2 | 3;
+  sideA: [string, string];
+  sideB: [string, string];
+  singles: boolean;
+  soundEnabled: boolean;
+};
+
 const ADMIN_EMAIL = "gorodscyflavio@gmail.com";
 const AUTH_ACTION_TIMEOUT_MS = 15000;
+const defaultMatchOptions: MatchOptions = {
+  customNames: true,
+  scorer: 0,
+  server: 0,
+  sideA: [user.name, "Serena"],
+  sideB: [opponent.name, "Venus"],
+  singles: true,
+  soundEnabled: true
+};
 
 const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
   { screen: "home", label: "Play", icon: Home },
@@ -73,6 +98,8 @@ export default function App() {
   const [screen, setScreen] = usePersistentState<Screen>("acetrack:screen", "home");
   const [profile, setProfile] = usePersistentState<UserProfile>("acetrack:profile", user);
   const [match, setMatch] = usePersistentState("acetrack:live-match", createMatch([user.name, opponent.name]));
+  const [matchMode, setMatchMode] = usePersistentState<MatchMode>("acetrack:match-mode", "setup");
+  const [matchOptions, setMatchOptions] = usePersistentState<MatchOptions>("acetrack:match-options", defaultMatchOptions);
   const [activeFilter, setActiveFilter] = usePersistentState("acetrack:highlight-filter", "All");
   const [socialTab, setSocialTab] = usePersistentState("acetrack:social-tab", "Nearby");
   const [saveStatus, setSaveStatus] = useState("");
@@ -81,6 +108,9 @@ export default function App() {
   const [accountStatus, setAccountStatus] = useState("Checking account...");
   const [authPhase, setAuthPhase] = useState<AuthPhase>("loading");
   const [appUser, setAppUser] = useState<AppUser | undefined>();
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState("Voice ready");
+  const voiceRecognitionRef = useRef<{ start: () => void; stop: () => void; abort?: () => void; onend: (() => void) | null; onerror: ((event: unknown) => void) | null; onresult: ((event: unknown) => void) | null; continuous?: boolean; interimResults?: boolean; lang?: string } | undefined>(undefined);
 
   const pointDisplay = getPointDisplay(match);
   const sets = getCompletedSets(match);
@@ -134,6 +164,12 @@ export default function App() {
     if (screen === "admin" && !isAdmin) setScreen("home");
   }, [isAdmin, screen, setScreen]);
 
+  useEffect(() => {
+    return () => {
+      voiceRecognitionRef.current?.abort?.();
+    };
+  }, []);
+
   function showMessage(message: string) {
     setAppMessage(message);
     window.setTimeout(() => setAppMessage(""), 2400);
@@ -164,13 +200,96 @@ export default function App() {
   function addPoint(player: 0 | 1) {
     const next = scorePoint(match, player);
     setMatch(next);
+    playUiSound(player === 0 ? "point" : "opponent", matchOptions.soundEnabled);
     if (next.winner !== undefined) setScreen("complete");
   }
 
   function startNewMatch() {
-    setMatch(createMatch([profile.name, opponent.name]));
+    setMatchMode("setup");
     setSaveStatus("");
     setScreen("live");
+  }
+
+  function beginMatch(options: MatchOptions) {
+    const normalizedOptions = normalizeMatchOptions(options, profile.name);
+    setMatchOptions(normalizedOptions);
+    setMatch(createMatch(getMatchSideNames(normalizedOptions)));
+    setMatchMode("playing");
+    setSaveStatus("");
+    setScreen("live");
+    playUiSound("start", normalizedOptions.soundEnabled);
+    showMessage("Match started");
+  }
+
+  function toggleSound() {
+    setMatchOptions((current) => {
+      const next = { ...current, soundEnabled: !current.soundEnabled };
+      playUiSound(next.soundEnabled ? "start" : "tap", next.soundEnabled);
+      return next;
+    });
+  }
+
+  function toggleVoiceCommands() {
+    if (isVoiceListening) {
+      voiceRecognitionRef.current?.stop();
+      setIsVoiceListening(false);
+      setVoiceStatus("Voice paused");
+      return;
+    }
+
+    const SpeechRecognition = getSpeechRecognitionConstructor();
+    if (!SpeechRecognition) {
+      setVoiceStatus("Voice commands unavailable");
+      showMessage("Voice commands are not supported in this browser");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+    recognition.onresult = (event: unknown) => {
+      const transcript = getSpeechTranscript(event);
+      if (!transcript) return;
+      setVoiceStatus(`Heard: ${transcript}`);
+      handleVoiceCommand(transcript);
+    };
+    recognition.onerror = () => {
+      setIsVoiceListening(false);
+      setVoiceStatus("Voice needs permission");
+    };
+    recognition.onend = () => {
+      setIsVoiceListening(false);
+    };
+    voiceRecognitionRef.current = recognition;
+    recognition.start();
+    setIsVoiceListening(true);
+    setVoiceStatus("Listening for commands");
+  }
+
+  function handleVoiceCommand(transcript: string) {
+    const command = transcript.toLowerCase();
+    if (command.includes("undo") || command.includes("back")) {
+      setMatch((current) => undoPoint(current));
+      playUiSound("undo", matchOptions.soundEnabled);
+      return;
+    }
+    if (command.includes("end match") || command.includes("finish match")) {
+      playUiSound("end", matchOptions.soundEnabled);
+      setScreen("complete");
+      return;
+    }
+    if (command.includes("new match") || command.includes("reset match")) {
+      startNewMatch();
+      return;
+    }
+    if (command.includes("opponent") || command.includes("tania") || command.includes("venus") || command.includes("them")) {
+      addPoint(1);
+      return;
+    }
+    if (command.includes("point") || command.includes("score") || command.includes("flavio") || command.includes("serena") || command.includes("me")) {
+      addPoint(0);
+    }
   }
 
   async function saveCurrentMatch() {
@@ -283,19 +402,39 @@ export default function App() {
       <div className={`phone-frame ${screen === "live" ? "is-live" : ""}`}>
         <CourtLines />
         {screen === "home" && <HomeScreen profile={profile} onAction={showMessage} onNavigate={setScreen} onStartMatch={startNewMatch} />}
-        {screen === "live" && (
+        {screen === "live" && matchMode === "setup" && (
+          <MatchSetupScreen
+            options={matchOptions}
+            profileName={profile.name}
+            onAction={showMessage}
+            onStart={beginMatch}
+            onUpdate={setMatchOptions}
+          />
+        )}
+        {screen === "live" && matchMode === "playing" && (
           <LiveMatchScreen
+            isVoiceListening={isVoiceListening}
             matchWinner={match.winner}
+            options={matchOptions}
             pointDisplay={pointDisplay}
             profile={profile}
             sets={sets}
             onAction={showMessage}
             onPoint={addPoint}
-            onUndo={() => setMatch(undoPoint(match))}
+            onSoundToggle={toggleSound}
+            onUndo={() => {
+              setMatch(undoPoint(match));
+              playUiSound("undo", matchOptions.soundEnabled);
+            }}
             onComplete={() => setScreen("complete")}
-            onEndMatch={() => setScreen("complete")}
+            onEndMatch={() => {
+              playUiSound("end", matchOptions.soundEnabled);
+              setScreen("complete");
+            }}
             onExit={() => setScreen("home")}
             onNewMatch={startNewMatch}
+            onVoiceToggle={toggleVoiceCommands}
+            voiceStatus={voiceStatus}
           />
         )}
         {screen === "complete" && (
@@ -431,34 +570,154 @@ function SplashScreen() {
   );
 }
 
+function MatchSetupScreen({
+  options,
+  profileName,
+  onAction,
+  onStart,
+  onUpdate
+}: {
+  options: MatchOptions;
+  profileName: string;
+  onAction: (message: string) => void;
+  onStart: (options: MatchOptions) => void;
+  onUpdate: (options: MatchOptions) => void;
+}) {
+  const currentOptions = normalizeMatchOptions(options, profileName);
+  const playerChoices = getSetupPlayerChoices(currentOptions);
+
+  function updateSide(side: "sideA" | "sideB", index: 0 | 1, value: string) {
+    const nextSide = [...currentOptions[side]] as [string, string];
+    nextSide[index] = value;
+    onUpdate({ ...currentOptions, [side]: nextSide });
+  }
+
+  function swapSides() {
+    onUpdate({
+      ...currentOptions,
+      sideA: currentOptions.sideB,
+      sideB: currentOptions.sideA,
+      scorer: currentOptions.scorer === 0 ? 1 : 0,
+      server: currentOptions.server < 2 ? currentOptions.server + 2 as 2 | 3 : currentOptions.server - 2 as 0 | 1
+    });
+    onAction("Sides swapped");
+  }
+
+  return (
+    <section className="screen content match-setup-screen">
+      <header className="match-setup-hero">
+        <p className="eyebrow"><span className="status-dot" /> New Match</p>
+        <h1>Set the court.</h1>
+        <button className="intro-button" onClick={() => onAction("Intro video coming soon")}><Play size={16} /> Watch intro video</button>
+      </header>
+
+      <div className="setup-name-grid">
+        {currentOptions.sideA.map((name, index) => (
+          <label className="setup-name-card" key={`a-${index}`}>
+            <input
+              aria-label={`Team one player ${index + 1}`}
+              disabled={!currentOptions.customNames || (currentOptions.singles && index === 1)}
+              value={currentOptions.singles && index === 1 ? "" : name}
+              onChange={(event) => updateSide("sideA", index as 0 | 1, event.target.value)}
+              placeholder={index === 0 ? "Player 1" : "Partner"}
+            />
+            <MenuIcon />
+          </label>
+        ))}
+        <button className="swap-sides-button" aria-label="Swap sides" onClick={swapSides}><Shuffle size={24} /></button>
+        {currentOptions.sideB.map((name, index) => (
+          <label className="setup-name-card" key={`b-${index}`}>
+            <input
+              aria-label={`Team two player ${index + 1}`}
+              disabled={!currentOptions.customNames || (currentOptions.singles && index === 1)}
+              value={currentOptions.singles && index === 1 ? "" : name}
+              onChange={(event) => updateSide("sideB", index as 0 | 1, event.target.value)}
+              placeholder={index === 0 ? "Opponent" : "Partner"}
+            />
+            <MenuIcon />
+          </label>
+        ))}
+      </div>
+
+      <div className="setup-toggle-row">
+        <label><input checked={currentOptions.customNames} onChange={(event) => onUpdate({ ...currentOptions, customNames: event.target.checked })} type="checkbox" /> Custom Names</label>
+        <label><input checked={currentOptions.singles} onChange={(event) => onUpdate({ ...currentOptions, singles: event.target.checked })} type="checkbox" /> Singles</label>
+        <button className="sound-pill" onClick={() => onUpdate({ ...currentOptions, soundEnabled: !currentOptions.soundEnabled })}>
+          {currentOptions.soundEnabled ? <Volume2 size={17} /> : <VolumeX size={17} />} Sound
+        </button>
+      </div>
+
+      <section className="setup-choice-section">
+        <h2>Who keeps score?</h2>
+        <div className="choice-grid two">
+          {[0, 1].map((side) => (
+            <button className={currentOptions.scorer === side ? "choice-card active" : "choice-card"} key={side} onClick={() => onUpdate({ ...currentOptions, scorer: side as 0 | 1 })}>
+              {getSideDisplay(currentOptions, side as 0 | 1)}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="setup-choice-section">
+        <h2>Who serves first?</h2>
+        <div className="choice-grid two">
+          {[0, 1].map((side) => (
+            <button
+              className={Math.floor(currentOptions.server / 2) === side ? "choice-card active compact" : "choice-card compact"}
+              key={side}
+              onClick={() => onUpdate({ ...currentOptions, server: (side * 2) as 0 | 2 })}
+            >
+              {playerChoices.slice(side * 2, side * 2 + 2).map((choice) => (
+                <span key={choice.index}><b>{choice.index + 1}</b> {choice.name}</span>
+              ))}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <button className="hero-action match-start-button" onClick={() => onStart(currentOptions)}>Start Match</button>
+    </section>
+  );
+}
+
 function LiveMatchScreen({
+  isVoiceListening,
+  options,
   pointDisplay,
   profile,
   sets,
   matchWinner,
   onAction,
   onPoint,
+  onSoundToggle,
   onUndo,
   onComplete,
   onEndMatch,
   onExit,
-  onNewMatch
+  onNewMatch,
+  onVoiceToggle,
+  voiceStatus
 }: {
+  isVoiceListening: boolean;
+  options: MatchOptions;
   pointDisplay: [string, string];
   profile: UserProfile;
   sets: ReturnType<typeof getCompletedSets>;
   matchWinner?: 0 | 1;
   onAction: (message: string) => void;
   onPoint: (player: 0 | 1) => void;
+  onSoundToggle: () => void;
   onUndo: () => void;
   onComplete: () => void;
   onEndMatch: () => void;
   onExit: () => void;
   onNewMatch: () => void;
+  onVoiceToggle: () => void;
+  voiceStatus: string;
 }) {
   return (
     <section className="screen content live-screen">
-      <div className="match-status">
+      <div className="match-status live-command-bar">
         <div>
           <p><span className="status-dot" /> Live</p>
           <strong>Singles Match</strong>
@@ -471,16 +730,21 @@ function LiveMatchScreen({
         </div>
       </div>
 
-      <div className="score-card">
-        <PlayerScore name={profile.name} meta={profile.rating} avatar={profile.avatar} photoDataUrl={profile.photoDataUrl} portrait={profile.portrait} score={pointDisplay[0]} />
-        <div className="divider">vs</div>
-        <PlayerScore name={opponent.name} meta={opponent.rating} avatar={opponent.avatar} portrait={opponent.portrait} score={pointDisplay[1]} />
+      <div className="live-score-stage">
+        <div className="live-side-name left">{getSideDisplay(options, 0)}</div>
+        <TennisBall />
+        <div className="live-side-name right">{getSideDisplay(options, 1)}</div>
+        <div className="stage-score">{pointDisplay[0]}</div>
+        <div className="stage-score">{pointDisplay[1]}</div>
+        <div className="mini-set-floating">
+          <SetTable profile={profile} sets={sets} />
+        </div>
       </div>
 
       <SetTable profile={profile} sets={sets} full />
 
-      <div className="timer-row">
-        <span>Match time</span>
+      <div className="timer-row live-remote-row">
+        <span><Radio size={16} /> {voiceStatus}</span>
         <strong><Clock3 size={16} /> 00:36</strong>
       </div>
 
@@ -501,9 +765,17 @@ function LiveMatchScreen({
           <span className="action-icon"><RotateCcw size={24} /></span>
           <span className="action-label">Undo</span>
         </button>
-        <button className="match-action" onClick={() => onAction("Voice tag saved")}>
+        <button className={isVoiceListening ? "match-action listening" : "match-action"} onClick={onVoiceToggle}>
           <span className="action-icon"><Mic size={24} /></span>
-          <span className="action-label">Voice</span>
+          <span className="action-label">{isVoiceListening ? "Listening" : "Voice"}</span>
+        </button>
+        <button className="match-action utility" onClick={onSoundToggle}>
+          <span className="action-icon">{options.soundEnabled ? <Volume2 size={24} /> : <VolumeX size={24} />}</span>
+          <span className="action-label">Sound</span>
+        </button>
+        <button className="match-action utility" onClick={() => onAction("Remote setup ready")}>
+          <span className="action-icon"><Settings size={24} /></span>
+          <span className="action-label">Remote</span>
         </button>
       </div>
 
@@ -1329,6 +1601,116 @@ function BottomNav({ active, isAdmin, onNavigate }: { active: Screen; isAdmin: b
       ))}
     </nav>
   );
+}
+
+function MenuIcon() {
+  return <span className="menu-lines" aria-hidden="true"><i /><i /><i /></span>;
+}
+
+function normalizeMatchOptions(options: MatchOptions, fallbackName: string): MatchOptions {
+  const normalized: MatchOptions = {
+    ...defaultMatchOptions,
+    ...options,
+    sideA: [
+      options.sideA?.[0]?.trim() || fallbackName || defaultMatchOptions.sideA[0],
+      options.sideA?.[1]?.trim() || defaultMatchOptions.sideA[1]
+    ],
+    sideB: [
+      options.sideB?.[0]?.trim() || defaultMatchOptions.sideB[0],
+      options.sideB?.[1]?.trim() || defaultMatchOptions.sideB[1]
+    ]
+  };
+
+  return normalized.singles
+    ? { ...normalized, server: normalized.server > 1 ? 0 : normalized.server }
+    : normalized;
+}
+
+function getSideDisplay(options: MatchOptions, side: 0 | 1) {
+  const names = side === 0 ? options.sideA : options.sideB;
+  return options.singles ? names[0] : `${names[0]} / ${names[1]}`;
+}
+
+function getMatchSideNames(options: MatchOptions): [string, string] {
+  return [getSideDisplay(options, 0), getSideDisplay(options, 1)];
+}
+
+function getSetupPlayerChoices(options: MatchOptions) {
+  return [...options.sideA, ...options.sideB].map((name, index) => ({
+    index,
+    name: options.singles && (index === 1 || index === 3) ? "Partner" : name
+  }));
+}
+
+function getSpeechRecognitionConstructor() {
+  const browserWindow = window as typeof window & {
+    SpeechRecognition?: new () => {
+      start: () => void;
+      stop: () => void;
+      abort?: () => void;
+      continuous?: boolean;
+      interimResults?: boolean;
+      lang?: string;
+      onend: (() => void) | null;
+      onerror: ((event: unknown) => void) | null;
+      onresult: ((event: unknown) => void) | null;
+    };
+    webkitSpeechRecognition?: new () => {
+      start: () => void;
+      stop: () => void;
+      abort?: () => void;
+      continuous?: boolean;
+      interimResults?: boolean;
+      lang?: string;
+      onend: (() => void) | null;
+      onerror: ((event: unknown) => void) | null;
+      onresult: ((event: unknown) => void) | null;
+    };
+  };
+
+  return browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
+}
+
+function getSpeechTranscript(event: unknown) {
+  const resultEvent = event as {
+    results?: ArrayLike<ArrayLike<{ transcript?: string }>>;
+    resultIndex?: number;
+  };
+  const index = resultEvent.resultIndex ?? 0;
+  return resultEvent.results?.[index]?.[0]?.transcript?.trim() ?? "";
+}
+
+function playUiSound(kind: "end" | "opponent" | "point" | "start" | "tap" | "undo", enabled: boolean) {
+  if (!enabled) return;
+
+  try {
+    const AudioContextConstructor = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextConstructor) return;
+
+    const audioContext = new AudioContextConstructor();
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const frequencies = {
+      end: 240,
+      opponent: 360,
+      point: 620,
+      start: 520,
+      tap: 300,
+      undo: 260
+    };
+
+    oscillator.type = kind === "point" || kind === "start" ? "sine" : "triangle";
+    oscillator.frequency.value = frequencies[kind];
+    gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, audioContext.currentTime + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.16);
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.18);
+  } catch {
+    // Sound is a progressive enhancement.
+  }
 }
 
 function formatAccountStatus(appUser: AppUser) {
