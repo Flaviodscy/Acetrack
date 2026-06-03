@@ -1,5 +1,5 @@
 import { getFirebaseDb } from "./firebaseClient";
-import type { BackendMode, UserProfile } from "../types/domain";
+import type { AdminUserProfile, BackendMode, UserProfile } from "../types/domain";
 
 const LOCAL_PROFILE_KEY = "acetrack:profile";
 
@@ -41,6 +41,29 @@ export async function saveUserProfile(userId: string, profile: UserProfile): Pro
   }
 
   return { mode: "local" };
+}
+
+export async function listUserProfiles(): Promise<AdminUserProfile[]> {
+  const db = await getFirebaseDb();
+
+  if (!db) return [];
+
+  try {
+    const { collectionGroup, getDocs } = await import("firebase/firestore");
+    const snapshots = await getDocs(collectionGroup(db, "profile"));
+
+    return snapshots.docs.map((profileDoc) => {
+      const data = profileDoc.data();
+      return {
+        ...deserializeProfile(data),
+        userId: profileDoc.ref.parent.parent?.id ?? profileDoc.id,
+        updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined
+      };
+    });
+  } catch (error) {
+    console.warn("Firebase admin profile list failed.", error);
+    return [];
+  }
 }
 
 function serializeProfile(profile: UserProfile) {

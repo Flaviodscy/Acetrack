@@ -28,6 +28,7 @@ import {
   Plus,
   RotateCcw,
   Share2,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Star,
@@ -49,14 +50,15 @@ import {
   type AppUser
 } from "./backend/authRepository";
 import { getBackendMode, saveMatchRecord } from "./backend/matchRepository";
-import { loadUserProfile, saveUserProfile } from "./backend/profileRepository";
+import { listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint } from "./lib/tennisScoring";
-import type { UserProfile } from "./types/domain";
+import type { AdminUserProfile, UserProfile } from "./types/domain";
 import "./styles.css";
 
-type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account";
+type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account" | "admin";
 type AuthPhase = "loading" | "signed-out" | "signed-in";
+const ADMIN_EMAIL = "gorodscyflavio@gmail.com";
 
 const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
   { screen: "home", label: "Play", icon: Home },
@@ -83,6 +85,7 @@ export default function App() {
   const sets = getCompletedSets(match);
   const winnerName = match.winner !== undefined ? (match.winner === 0 ? profile.name : opponent.name) : profile.name;
   const finalScore = getFinalScore(match) || "6-4, 6-3";
+  const isAdmin = appUser?.email?.toLowerCase() === ADMIN_EMAIL;
 
   const visibleHighlights = useMemo(() => {
     if (activeFilter === "All") return highlights;
@@ -125,6 +128,10 @@ export default function App() {
       window.clearTimeout(loadingTimeout);
     };
   }, []);
+
+  useEffect(() => {
+    if (screen === "admin" && !isAdmin) setScreen("home");
+  }, [isAdmin, screen, setScreen]);
 
   function showMessage(message: string) {
     setAppMessage(message);
@@ -313,7 +320,8 @@ export default function App() {
             onSignOut={signOutAccount}
           />
         )}
-        <BottomNav active={screen} onNavigate={setScreen} />
+        {screen === "admin" && isAdmin && <AdminScreen onAction={showMessage} />}
+        <BottomNav active={screen} isAdmin={isAdmin} onNavigate={setScreen} />
         {appMessage && <div className="toast">{appMessage}</div>}
       </div>
     </main>
@@ -1013,6 +1021,180 @@ function AccountScreen({
   );
 }
 
+function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
+  const [profiles, setProfiles] = useState<AdminUserProfile[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [draft, setDraft] = useState<UserProfile | undefined>();
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("Loading users...");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    setStatus("Loading users...");
+    listUserProfiles().then((items) => {
+      if (!isMounted) return;
+      setProfiles(items);
+      setSelectedId((current) => current || items[0]?.userId || "");
+      setStatus(items.length ? `${items.length} user profiles loaded` : "No user profiles found yet");
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const selectedProfile = profiles.find((item) => item.userId === selectedId);
+
+  useEffect(() => {
+    if (selectedProfile) setDraft(stripAdminFields(selectedProfile));
+  }, [selectedProfile]);
+
+  const filteredProfiles = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return profiles;
+
+    return profiles.filter((item) =>
+      [item.name, item.location, item.rating, item.userId]
+        .join(" ")
+        .toLowerCase()
+        .includes(term)
+    );
+  }, [profiles, query]);
+
+  const totalXp = profiles.reduce((sum, item) => sum + item.xp, 0);
+  const averageLevel = profiles.length
+    ? Math.round(profiles.reduce((sum, item) => sum + item.level, 0) / profiles.length)
+    : 0;
+
+  function updateDraft(field: keyof UserProfile, value: string | number) {
+    setDraft((current) => current ? { ...current, [field]: value } : current);
+  }
+
+  function updateEquipment(field: keyof UserProfile["equipment"], value: string) {
+    setDraft((current) => current ? { ...current, equipment: { ...current.equipment, [field]: value } } : current);
+  }
+
+  async function saveAdminProfile() {
+    if (!selectedProfile || !draft) return;
+
+    const nextProfile = normalizeProfileDraft(draft);
+    setIsSaving(true);
+    setStatus("Saving user profile...");
+    const result = await saveUserProfile(selectedProfile.userId, nextProfile);
+    const updatedProfile: AdminUserProfile = {
+      ...nextProfile,
+      userId: selectedProfile.userId,
+      updatedAt: new Date().toISOString()
+    };
+    setProfiles((current) => current.map((item) => item.userId === selectedProfile.userId ? updatedProfile : item));
+    setDraft(nextProfile);
+    setStatus(result.mode === "firebase" ? "User profile saved to Firebase" : "User profile saved locally");
+    setIsSaving(false);
+    onAction("Admin changes saved");
+  }
+
+  return (
+    <section className="screen content admin-screen">
+      <header className="simple-header admin-header">
+        <p className="eyebrow"><ShieldCheck size={15} /> Admin</p>
+        <h1>User management.</h1>
+        <p>Manage AceTrack player profiles and support accounts.</p>
+      </header>
+
+      <div className="admin-stats">
+        <Metric label="Profiles" value={String(profiles.length)} />
+        <Metric label="Average Level" value={String(averageLevel)} />
+        <Metric label="Total XP" value={totalXp.toLocaleString()} />
+      </div>
+
+      <label className="admin-search">
+        <span>Search users</span>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, city, rating, or user id" />
+      </label>
+
+      <div className="admin-layout">
+        <div className="admin-list" aria-label="User profiles">
+          {filteredProfiles.map((item) => (
+            <button className={item.userId === selectedId ? "admin-row active" : "admin-row"} key={item.userId} onClick={() => setSelectedId(item.userId)}>
+              <Portrait className={item.portrait} initials={item.avatar} photoDataUrl={item.photoDataUrl} />
+              <span>
+                <strong>{item.name}</strong>
+                <small>{item.location} · {item.rating}</small>
+                <em>{item.userId}</em>
+              </span>
+              <b>Lv {item.level}</b>
+            </button>
+          ))}
+          {!filteredProfiles.length && <p className="admin-empty">{status}</p>}
+        </div>
+
+        <article className="admin-editor">
+          <div className="section-row">
+            <h2>{draft ? "Edit selected user" : "Select a user"}</h2>
+            <button className="text-button" disabled={!draft || isSaving} onClick={saveAdminProfile}>{isSaving ? "Saving..." : "Save"}</button>
+          </div>
+          {draft ? (
+            <>
+              <div className="admin-user-card">
+                <Portrait className={`${draft.portrait} large`} initials={draft.avatar} photoDataUrl={draft.photoDataUrl} />
+                <div>
+                  <strong>{draft.name}</strong>
+                  <span>{selectedProfile?.userId}</span>
+                  <small>Updated {selectedProfile?.updatedAt ? new Date(selectedProfile.updatedAt).toLocaleDateString() : "recently"}</small>
+                </div>
+              </div>
+              <div className="edit-grid admin-form">
+                <label>
+                  <span>Name</span>
+                  <input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} />
+                </label>
+                <label>
+                  <span>Location</span>
+                  <input value={draft.location} onChange={(event) => updateDraft("location", event.target.value)} />
+                </label>
+                <label>
+                  <span>Rating</span>
+                  <select value={draft.rating} onChange={(event) => updateDraft("rating", event.target.value)}>
+                    {["NTRP 2.5", "NTRP 3.0", "NTRP 3.5", "NTRP 4.0", "NTRP 4.5", "NTRP 5.0"].map((rating) => <option key={rating}>{rating}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Level</span>
+                  <input min="1" max="99" type="number" value={draft.level} onChange={(event) => updateDraft("level", Number(event.target.value))} />
+                </label>
+                <label>
+                  <span>XP</span>
+                  <input min="0" max="100" type="number" value={draft.xp} onChange={(event) => updateDraft("xp", Number(event.target.value))} />
+                </label>
+                <label>
+                  <span>XP text</span>
+                  <input value={draft.xpText} onChange={(event) => updateDraft("xpText", event.target.value)} />
+                </label>
+                <label>
+                  <span>Racket</span>
+                  <input value={draft.equipment.racket} onChange={(event) => updateEquipment("racket", event.target.value)} />
+                </label>
+                <label>
+                  <span>Strings</span>
+                  <input value={draft.equipment.strings} onChange={(event) => updateEquipment("strings", event.target.value)} />
+                </label>
+              </div>
+              <p className="save-status">{status}</p>
+              <div className="button-pair">
+                <button className="hero-action compact" disabled={isSaving} onClick={saveAdminProfile}><ShieldCheck size={18} /> {isSaving ? "Saving..." : "Save user"}</button>
+                <button className="ghost-button" onClick={() => selectedProfile && setDraft(stripAdminFields(selectedProfile))}>Reset edits</button>
+              </div>
+            </>
+          ) : (
+            <p className="admin-empty">{status}</p>
+          )}
+        </article>
+      </div>
+    </section>
+  );
+}
+
 function AceTrackWordmark() {
   return (
     <div className="wordmark" aria-label="AceTrack">
@@ -1094,10 +1276,14 @@ function Metric({ label, value, delta }: { label: string; value: string; delta?:
   return <div className="metric"><span>{label}</span><strong>{value}</strong>{delta && <em>{delta}</em>}</div>;
 }
 
-function BottomNav({ active, onNavigate }: { active: Screen; onNavigate: (screen: Screen) => void }) {
+function BottomNav({ active, isAdmin, onNavigate }: { active: Screen; isAdmin: boolean; onNavigate: (screen: Screen) => void }) {
+  const visibleItems = isAdmin
+    ? [...navItems, { screen: "admin" as Screen, label: "Admin", icon: ShieldCheck }]
+    : navItems;
+
   return (
     <nav className="bottom-nav">
-      {navItems.map(({ screen, label, icon: Icon }) => (
+      {visibleItems.map(({ screen, label, icon: Icon }) => (
         <button className={active === screen ? "active" : ""} key={screen} onClick={() => onNavigate(screen)}>
           <Icon size={20} />
           <span>{label}</span>
@@ -1144,6 +1330,21 @@ function getInitials(name: string) {
 function getShortName(name: string) {
   const [first = "Player", last] = name.trim().split(/\s+/);
   return last ? `${first[0]}. ${last}` : first;
+}
+
+function stripAdminFields(profile: AdminUserProfile): UserProfile {
+  const { userId: _userId, updatedAt: _updatedAt, ...userProfile } = profile;
+  return userProfile;
+}
+
+function normalizeProfileDraft(profile: UserProfile): UserProfile {
+  return {
+    ...profile,
+    avatar: getInitials(profile.name),
+    shortName: getShortName(profile.name),
+    xp: Math.max(0, Math.min(100, Number(profile.xp) || 0)),
+    level: Math.max(1, Number(profile.level) || 1)
+  };
 }
 
 function createShareCardSvg(profile: UserProfile) {

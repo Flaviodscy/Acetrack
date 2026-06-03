@@ -39,6 +39,11 @@ export type UserProfile = {
   };
 };
 
+export type AdminUserProfile = UserProfile & {
+  userId: string;
+  updatedAt?: string;
+};
+
 export type MatchRecord = {
   id: string;
   userId: string;

@@ -4133,3 +4133,235 @@ h1,
     height: 100%;
   }
 }
+
+/* Admin profile management. */
+.admin-screen .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-header p:not(.eyebrow) {
+  max-width: 340px;
+}
+
+.admin-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 22px 0 16px;
+}
+
+.admin-stats .metric {
+  min-height: 100px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: var(--shadow-soft), inset 0 0 0 1px rgba(38, 54, 31, 0.055);
+}
+
+.admin-search {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.admin-search span {
+  color: #394332;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.admin-search input {
+  width: 100%;
+  min-height: 50px;
+  border: 0;
+  border-radius: 18px;
+  padding: 0 15px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 760;
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(38, 54, 31, 0.08);
+}
+
+.admin-search input:focus {
+  box-shadow: inset 0 0 0 2px var(--accent-strong);
+}
+
+.admin-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-list {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  text-align: left;
+  box-shadow: inset 0 0 0 1px rgba(38, 54, 31, 0.055);
+}
+
+.admin-row.active {
+  background: #f3fad2;
+  box-shadow: 0 14px 34px rgba(159, 198, 58, 0.14), inset 0 0 0 1px rgba(159, 198, 58, 0.28);
+}
+
+.admin-row .portrait {
+  width: 54px;
+  height: 54px;
+}
+
+.admin-row span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.admin-row strong {
+  overflow: hidden;
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-row small,
+.admin-row em {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-row b {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+}
+
+.admin-editor {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--shadow-soft), inset 0 0 0 1px rgba(38, 54, 31, 0.06);
+}
+
+.admin-user-card {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f4fad8, #fffefa);
+}
+
+.admin-user-card .portrait.large {
+  width: 78px;
+  height: 78px;
+  margin: 0;
+}
+
+.admin-user-card div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.admin-user-card strong {
+  color: var(--ink);
+  font-size: 1.08rem;
+}
+
+.admin-user-card span,
+.admin-user-card small,
+.admin-empty {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.admin-form {
+  gap: 10px;
+}
+
+.admin-empty {
+  margin: 0;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.64);
+  text-align: center;
+}
+
+.bottom-nav {
+  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
+}
+
+.bottom-nav button {
+  padding-inline: 3px;
+}
+
+@media (max-width: 420px) {
+  .admin-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-row {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .admin-row b {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+@media (min-width: 720px) and (orientation: landscape) {
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen,
+  .admin-screen {
+    grid-template-columns: minmax(260px, 0.78fr) minmax(460px, 1.22fr);
+    column-gap: 42px;
+  }
+
+  .admin-screen .admin-header,
+  .admin-screen .admin-stats,
+  .admin-screen .admin-search {
+    grid-column: 1;
+  }
+
+  .admin-screen .admin-layout {
+    grid-column: 2;
+    grid-row: 1 / span 4;
+    grid-template-columns: minmax(260px, 0.92fr) minmax(320px, 1.08fr);
+    align-self: start;
+  }
+
+  .admin-list {
+    max-height: 560px;
+    overflow: auto;
+    padding-right: 4px;
+  }
+
+  .admin-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
