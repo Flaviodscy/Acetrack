@@ -55,10 +55,11 @@ import {
   type AppUser
 } from "./backend/authRepository";
 import { getBackendMode, saveMatchRecord } from "./backend/matchRepository";
+import { listPlayerLocations, savePlayerLocation, toNearbyPlayers } from "./backend/nearbyRepository";
 import { listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint } from "./lib/tennisScoring";
-import type { AdminUserProfile, UserProfile } from "./types/domain";
+import type { AdminUserProfile, NearbyPlayer, UserProfile } from "./types/domain";
 import "./styles.css";
 
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account" | "admin";
@@ -458,7 +459,15 @@ export default function App() {
             onFilter={setActiveFilter}
           />
         )}
-        {screen === "social" && <SocialScreen activeTab={socialTab} onAction={showMessage} onTab={setSocialTab} />}
+        {screen === "social" && (
+          <SocialScreen
+            activeTab={socialTab}
+            appUser={appUser}
+            profile={profile}
+            onAction={showMessage}
+            onTab={setSocialTab}
+          />
+        )}
         {screen === "profile" && (
           <ProfileScreen
             accountStatus={accountStatus}
@@ -951,13 +960,54 @@ function HighlightsScreen({
 
 function SocialScreen({
   activeTab,
+  appUser,
+  profile,
   onAction,
   onTab
 }: {
   activeTab: string;
+  appUser?: AppUser;
+  profile: UserProfile;
   onAction: (message: string) => void;
   onTab: (tab: string) => void;
 }) {
+  const [nearbyStatus, setNearbyStatus] = useState("Share GPS to find friends nearby");
+  const [nearbyList, setNearbyList] = useState<NearbyPlayer[]>(getMockNearbyPlayers());
+  const [isLocating, setIsLocating] = useState(false);
+  const [radiusMiles, setRadiusMiles] = useState(10);
+
+  useEffect(() => {
+    setNearbyList((current) => rankNearbyPlayers(current));
+  }, [radiusMiles]);
+
+  async function refreshNearbyFromGps() {
+    if (!navigator.geolocation) {
+      setNearbyStatus("GPS is not available in this browser");
+      return;
+    }
+
+    setIsLocating(true);
+    setNearbyStatus("Requesting GPS permission...");
+
+    try {
+      const position = await getCurrentPosition();
+      const activeUser = appUser ?? await getCurrentAppUser();
+      await savePlayerLocation(activeUser.id, profile, position.coords);
+      const liveLocations = await listPlayerLocations();
+      const livePlayers = toNearbyPlayers(liveLocations, position.coords, activeUser.id);
+      const combined = rankNearbyPlayers([...livePlayers, ...getMockNearbyPlayers(position.coords)]);
+      setNearbyList(combined);
+      setNearbyStatus(livePlayers.length ? `${livePlayers.length} live players found nearby` : "Location shared. Waiting for friends nearby");
+      onAction("Nearby players updated");
+    } catch (error) {
+      setNearbyStatus(getLocationErrorMessage(error));
+    } finally {
+      setIsLocating(false);
+    }
+  }
+
+  const visibleNearbyPlayers = nearbyList.filter((player) => player.distanceMiles <= radiusMiles);
+
   return (
     <section className="screen content social-screen">
       <header className="simple-header">
@@ -972,18 +1022,28 @@ function SocialScreen({
         ))}
       </div>
       <div className="section-row">
-        <button className="distance-pill" onClick={() => onAction("Distance set to 10 miles")}><MapPin size={18} /> Within 10 miles <ChevronRight size={16} /></button>
+        <button className="distance-pill" onClick={() => setRadiusMiles((current) => current === 10 ? 25 : 10)}><MapPin size={18} /> Within {radiusMiles} miles <ChevronRight size={16} /></button>
         <button className="icon-button" aria-label="Player filters" onClick={() => onAction("Player filters ready")}><SlidersHorizontal size={20} /></button>
       </div>
+      <article className="gps-card">
+        <div>
+          <p className="eyebrow">Live GPS</p>
+          <strong>{nearbyStatus}</strong>
+          <span>Shares a rounded location for 24 hours when you tap.</span>
+        </div>
+        <button className="hero-action compact" disabled={isLocating} onClick={refreshNearbyFromGps}>
+          <MapPin size={18} /> {isLocating ? "Finding..." : "Use GPS"}
+        </button>
+      </article>
       <p className="list-label">Nearby players</p>
       <div className="player-list">
-        {nearbyPlayers.map((player) => (
-          <article className="player-row" key={player.name}>
+        {visibleNearbyPlayers.map((player) => (
+          <article className={player.isLive ? "player-row live-player" : "player-row"} key={player.id}>
             <strong className={player.rank <= 3 ? "rank active" : "rank"}>{player.rank}</strong>
             <Portrait className={player.portrait} initials={player.avatar} />
             <div>
-              <h3>{player.name}</h3>
-              <p>Level <b>{player.level}</b></p>
+              <h3>{player.name}{player.isLive && <span className="live-chip">GPS</span>}</h3>
+              <p>Level <b>{player.level}</b>{player.rating && <span> · {player.rating}</span>}</p>
               <p><MapPin size={13} /> {player.distance} away</p>
             </div>
             <span className="streak"><Flame size={16} /> {player.streak} day streak</span>
@@ -991,6 +1051,7 @@ function SocialScreen({
             <button onClick={() => onAction(`Challenge sent to ${player.name}`)}>Challenge</button>
           </article>
         ))}
+        {!visibleNearbyPlayers.length && <p className="admin-empty">No players inside {radiusMiles} miles yet.</p>}
       </div>
       <p className="list-label">Local ladder</p>
       <article className="ladder-card">
@@ -1711,6 +1772,55 @@ function playUiSound(kind: "end" | "opponent" | "point" | "start" | "tap" | "und
   } catch {
     // Sound is a progressive enhancement.
   }
+}
+
+function getCurrentPosition(): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      maximumAge: 30000,
+      timeout: 12000
+    });
+  });
+}
+
+function getMockNearbyPlayers(origin?: GeolocationCoordinates): NearbyPlayer[] {
+  const baseLat = origin?.latitude ?? 43.6532;
+  const baseLng = origin?.longitude ?? -79.3832;
+  const offsets = [
+    [0.012, -0.009],
+    [-0.021, 0.014],
+    [0.026, 0.02],
+    [-0.034, -0.018],
+    [0.045, 0.03]
+  ];
+
+  return nearbyPlayers.map((player, index) => {
+    const distanceMiles = Number.parseFloat(player.distance);
+    return {
+      ...player,
+      distanceMiles: Number.isFinite(distanceMiles) ? distanceMiles : index + 1,
+      id: `mock-${player.name}`,
+      isLive: false,
+      lat: baseLat + offsets[index][0],
+      lng: baseLng + offsets[index][1],
+      rating: "NTRP demo"
+    };
+  });
+}
+
+function rankNearbyPlayers(players: NearbyPlayer[]) {
+  return [...players]
+    .sort((a, b) => a.distanceMiles - b.distanceMiles)
+    .map((player, index) => ({ ...player, rank: index + 1 }));
+}
+
+function getLocationErrorMessage(error: unknown) {
+  const code = typeof error === "object" && error && "code" in error ? Number((error as { code?: unknown }).code) : 0;
+  if (code === 1) return "GPS permission was blocked";
+  if (code === 2) return "GPS position is unavailable";
+  if (code === 3) return "GPS timed out. Try again outside";
+  return error instanceof Error ? error.message : "Could not update nearby players";
 }
 
 function formatAccountStatus(appUser: AppUser) {

@@ -44,6 +44,25 @@ export type AdminUserProfile = UserProfile & {
   updatedAt?: string;
 };
 
+export type NearbyPlayer = {
+  avatar: string;
+  distance: string;
+  distanceMiles: number;
+  id: string;
+  isLive?: boolean;
+  lat?: number;
+  lng?: number;
+  level: number;
+  locationLabel?: string;
+  name: string;
+  points: number;
+  portrait: string;
+  rank: number;
+  rating?: string;
+  streak: number;
+  updatedAt?: string;
+};
+
 export type MatchRecord = {
   id: string;
   userId: string;

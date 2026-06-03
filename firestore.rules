@@ -19,5 +19,11 @@ service cloud.firestore {
     match /users/{userId}/profile/{profileId} {
       allow read, write: if isOwner(userId) || isAdmin();
     }
+
+    match /publicLocations/{userId} {
+      allow read: if request.auth != null;
+      allow write: if isOwner(userId);
+      allow delete: if isOwner(userId) || isAdmin();
+    }
   }
 }
