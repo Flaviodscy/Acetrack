@@ -1,4 +1,6 @@
-export const user = {
+import type { UserProfile } from "../types/domain";
+
+export const user: UserProfile = {
   name: "Alex Morgan",
   shortName: "A. Morgan",
   avatar: "AM",

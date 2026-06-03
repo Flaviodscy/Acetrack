@@ -46,13 +46,14 @@ import {
   type AppUser
 } from "./backend/authRepository";
 import { getBackendMode, saveMatchRecord } from "./backend/matchRepository";
+import { loadUserProfile, saveUserProfile } from "./backend/profileRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint } from "./lib/tennisScoring";
+import type { UserProfile } from "./types/domain";
 import "./styles.css";
 
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account";
 type AuthPhase = "loading" | "signed-out" | "signed-in";
-type UserProfile = typeof user;
 
 const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
   { screen: "home", label: "Play", icon: Home },
@@ -69,6 +70,7 @@ export default function App() {
   const [activeFilter, setActiveFilter] = usePersistentState("acetrack:highlight-filter", "All");
   const [socialTab, setSocialTab] = usePersistentState("acetrack:social-tab", "Nearby");
   const [saveStatus, setSaveStatus] = useState("");
+  const [profileSaveStatus, setProfileSaveStatus] = useState("");
   const [appMessage, setAppMessage] = useState("");
   const [accountStatus, setAccountStatus] = useState("Checking account...");
   const [authPhase, setAuthPhase] = useState<AuthPhase>("loading");
@@ -99,6 +101,7 @@ export default function App() {
         if (appUser) {
           setAppUser(appUser);
           setAccountStatus(formatAccountStatus(appUser));
+          hydrateProfile(appUser);
           setAuthPhase("signed-in");
         } else {
           setAppUser(undefined);
@@ -125,6 +128,21 @@ export default function App() {
     window.setTimeout(() => setAppMessage(""), 2400);
   }
 
+  async function hydrateProfile(appUser: AppUser) {
+    setProfileSaveStatus("Loading profile...");
+    const result = await loadUserProfile(appUser.id);
+
+    if (result.profile) {
+      setProfile(result.profile);
+      setProfileSaveStatus(result.mode === "firebase" ? "Profile loaded from cloud" : "Profile loaded locally");
+      return result.profile;
+    }
+
+    const saveResult = await saveUserProfile(appUser.id, profile);
+    setProfileSaveStatus(saveResult.mode === "firebase" ? "Profile saved to cloud" : "Profile saved locally");
+    return profile;
+  }
+
   function addPoint(player: 0 | 1) {
     const next = scorePoint(match, player);
     setMatch(next);
@@ -145,6 +163,7 @@ export default function App() {
     const appUser = await signInWithEmail(email, password);
     setAppUser(appUser);
     setAccountStatus(formatAccountStatus(appUser));
+    await hydrateProfile(appUser);
     setAuthPhase("signed-in");
     setScreen("home");
     showMessage("Signed in");
@@ -155,6 +174,7 @@ export default function App() {
     const appUser = await createEmailAccount(email, password);
     setAppUser(appUser);
     setAccountStatus(formatAccountStatus(appUser));
+    await hydrateProfile(appUser);
     setAuthPhase("signed-in");
     setScreen("home");
     showMessage("Account created");
@@ -165,6 +185,7 @@ export default function App() {
     const appUser = await getCurrentAppUser();
     setAppUser(appUser);
     setAccountStatus(formatAccountStatus(appUser));
+    await hydrateProfile(appUser);
     setAuthPhase("signed-in");
     setScreen("home");
     showMessage("Guest session ready");
@@ -174,6 +195,7 @@ export default function App() {
     await signOutAppUser();
     setAppUser(undefined);
     setAccountStatus("Signed out");
+    setProfileSaveStatus("");
     setAuthPhase("signed-out");
     setScreen("home");
     showMessage("Signed out");
@@ -256,11 +278,17 @@ export default function App() {
           <ProfileScreen
             accountStatus={accountStatus}
             profile={profile}
+            profileSaveStatus={profileSaveStatus}
             onAction={showMessage}
             onNavigate={setScreen}
-            onSaveProfile={(nextProfile) => {
+            onSaveProfile={async (nextProfile) => {
               setProfile(nextProfile);
-              showMessage("Profile updated");
+              setProfileSaveStatus("Saving profile...");
+              const activeUser = appUser ?? await getCurrentAppUser();
+              setAppUser(activeUser);
+              const result = await saveUserProfile(activeUser.id, nextProfile);
+              setProfileSaveStatus(result.mode === "firebase" ? "Profile saved to cloud" : "Profile saved locally");
+              showMessage(result.mode === "firebase" ? "Profile saved" : "Profile saved locally");
             }}
           />
         )}
@@ -634,18 +662,21 @@ function SocialScreen({
 function ProfileScreen({
   accountStatus,
   profile,
+  profileSaveStatus,
   onAction,
   onNavigate,
   onSaveProfile
 }: {
   accountStatus: string;
   profile: UserProfile;
+  profileSaveStatus: string;
   onAction: (message: string) => void;
   onNavigate: (screen: Screen) => void;
-  onSaveProfile: (profile: UserProfile) => void;
+  onSaveProfile: (profile: UserProfile) => Promise<void> | void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState<UserProfile>(profile);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setDraft(profile);
@@ -659,7 +690,7 @@ function ProfileScreen({
     setDraft((current) => ({ ...current, equipment: { ...current.equipment, [field]: value } }));
   }
 
-  function saveProfile() {
+  async function saveProfile() {
     const nextProfile = {
       ...draft,
       avatar: getInitials(draft.name),
@@ -667,7 +698,9 @@ function ProfileScreen({
       xp: Math.max(0, Math.min(100, Number(draft.xp) || 0)),
       level: Math.max(1, Number(draft.level) || 1)
     };
-    onSaveProfile(nextProfile);
+    setIsSaving(true);
+    await onSaveProfile(nextProfile);
+    setIsSaving(false);
     setIsEditing(false);
   }
 
@@ -687,7 +720,7 @@ function ProfileScreen({
         <article className="edit-profile-card">
           <div className="section-row">
             <h2>Edit profile</h2>
-            <button className="text-button" onClick={saveProfile}>Save</button>
+            <button className="text-button" disabled={isSaving} onClick={saveProfile}>{isSaving ? "Saving..." : "Save"}</button>
           </div>
           <div className="edit-grid">
             <label>
@@ -734,7 +767,7 @@ function ProfileScreen({
             </label>
           </div>
           <div className="button-pair">
-            <button className="hero-action compact" onClick={saveProfile}>Save changes</button>
+            <button className="hero-action compact" disabled={isSaving} onClick={saveProfile}>{isSaving ? "Saving..." : "Save changes"}</button>
             <button className="ghost-button" onClick={() => { setDraft(profile); setIsEditing(false); }}>Cancel</button>
           </div>
         </article>
@@ -744,6 +777,7 @@ function ProfileScreen({
         <div>
           <p className="eyebrow">Account</p>
           <strong>{accountStatus}</strong>
+          {profileSaveStatus && <span className="profile-sync-status">{profileSaveStatus}</span>}
         </div>
         <button onClick={() => onNavigate("account")}>Manage</button>
       </article>

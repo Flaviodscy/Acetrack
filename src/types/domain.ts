@@ -15,6 +15,28 @@ export type PlayerProfile = {
   xpText?: string;
 };
 
+export type UserProfile = {
+  name: string;
+  shortName: string;
+  avatar: string;
+  portrait: string;
+  location: string;
+  rating: string;
+  level: number;
+  xp: number;
+  xpText: string;
+  hand: string;
+  favoritePro: string;
+  skills: Array<[string, number]>;
+  equipment: {
+    racket: string;
+    headSize: string;
+    strings: string;
+    tension: string;
+    grip: string;
+  };
+};
+
 export type MatchRecord = {
   id: string;
   userId: string;
