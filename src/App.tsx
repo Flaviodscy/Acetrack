@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Activity,
   Apple,
@@ -16,6 +16,7 @@ import {
   Home,
   MapPin,
   Mic,
+  Minus,
   MoreHorizontal,
   Play,
   Plus,
@@ -31,6 +32,7 @@ import {
   Zap
 } from "lucide-react";
 import { highlights, nearbyPlayers, opponent, recapStats, recentMatches, user } from "./data/mockData";
+import { usePersistentState } from "./hooks/usePersistentState";
 import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint } from "./lib/tennisScoring";
 import "./styles.css";
 
@@ -45,10 +47,10 @@ const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
 ];
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>("home");
-  const [match, setMatch] = useState(() => createMatch([user.name, opponent.name]));
-  const [activeFilter, setActiveFilter] = useState("All");
-  const [socialTab, setSocialTab] = useState("Nearby");
+  const [screen, setScreen] = usePersistentState<Screen>("acetrack:screen", "home");
+  const [match, setMatch] = usePersistentState("acetrack:live-match", createMatch([user.name, opponent.name]));
+  const [activeFilter, setActiveFilter] = usePersistentState("acetrack:highlight-filter", "All");
+  const [socialTab, setSocialTab] = usePersistentState("acetrack:social-tab", "Nearby");
 
   const pointDisplay = getPointDisplay(match);
   const sets = getCompletedSets(match);
@@ -189,11 +191,26 @@ function LiveMatchScreen({
       </div>
 
       <div className="point-actions">
-        <button className="point-button primary" onClick={() => onPoint(0)}><Plus /><span>+ Point</span></button>
-        <button className="point-button" onClick={() => onPoint(1)}><span>Opponent Point</span></button>
-        <button className="tag-button" onClick={() => onPoint(0)}><Zap size={22} /><span>Ace</span></button>
-        <button className="tag-button" onClick={onUndo}><RotateCcw size={22} /><span>Undo</span></button>
-        <button className="tag-button"><Mic size={22} /><span>Voice Tag</span></button>
+        <button className="match-action primary" onClick={() => onPoint(0)}>
+          <span className="action-icon"><Plus size={26} /></span>
+          <span className="action-label">+ Point</span>
+        </button>
+        <button className="match-action primary" onClick={() => onPoint(1)}>
+          <span className="action-icon"><Minus size={26} /></span>
+          <span className="action-label">Opponent</span>
+        </button>
+        <button className="match-action" onClick={() => onPoint(0)}>
+          <span className="action-icon"><Zap size={24} /></span>
+          <span className="action-label">Ace</span>
+        </button>
+        <button className="match-action" onClick={onUndo}>
+          <span className="action-icon"><RotateCcw size={24} /></span>
+          <span className="action-label">Undo</span>
+        </button>
+        <button className="match-action">
+          <span className="action-icon"><Mic size={24} /></span>
+          <span className="action-label">Voice</span>
+        </button>
       </div>
 
       {matchWinner !== undefined && <button className="ghost-button" onClick={onComplete}>View recap</button>}
