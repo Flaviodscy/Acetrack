@@ -40,6 +40,7 @@ import { createMatchRecord } from "./backend/createMatchRecord";
 import {
   createEmailAccount,
   getCurrentAppUser,
+  getSignedInAppUser,
   signInWithEmail,
   signOutAppUser,
   type AppUser
@@ -50,6 +51,7 @@ import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoi
 import "./styles.css";
 
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account";
+type AuthPhase = "loading" | "signed-out" | "signed-in";
 
 const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
   { screen: "home", label: "Play", icon: Home },
@@ -67,6 +69,7 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState("");
   const [appMessage, setAppMessage] = useState("");
   const [accountStatus, setAccountStatus] = useState("Checking account...");
+  const [authPhase, setAuthPhase] = useState<AuthPhase>("loading");
 
   const pointDisplay = getPointDisplay(match);
   const sets = getCompletedSets(match);
@@ -79,9 +82,27 @@ export default function App() {
   }, [activeFilter]);
 
   useEffect(() => {
-    getCurrentAppUser()
-      .then((appUser) => setAccountStatus(formatAccountStatus(appUser)))
-      .catch(() => setAccountStatus("Account unavailable"));
+    let isMounted = true;
+    getSignedInAppUser()
+      .then((appUser) => {
+        if (!isMounted) return;
+        if (appUser) {
+          setAccountStatus(formatAccountStatus(appUser));
+          setAuthPhase("signed-in");
+        } else {
+          setAccountStatus("Not signed in");
+          setAuthPhase("signed-out");
+        }
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setAccountStatus("Account unavailable");
+        setAuthPhase("signed-out");
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   function showMessage(message: string) {
@@ -107,6 +128,8 @@ export default function App() {
     setAccountStatus("Signing in...");
     const appUser = await signInWithEmail(email, password);
     setAccountStatus(formatAccountStatus(appUser));
+    setAuthPhase("signed-in");
+    setScreen("home");
     showMessage("Signed in");
   }
 
@@ -114,6 +137,8 @@ export default function App() {
     setAccountStatus("Creating account...");
     const appUser = await createEmailAccount(email, password);
     setAccountStatus(formatAccountStatus(appUser));
+    setAuthPhase("signed-in");
+    setScreen("home");
     showMessage("Account created");
   }
 
@@ -121,13 +146,48 @@ export default function App() {
     setAccountStatus("Starting guest session...");
     const appUser = await getCurrentAppUser();
     setAccountStatus(formatAccountStatus(appUser));
+    setAuthPhase("signed-in");
+    setScreen("home");
     showMessage("Guest session ready");
   }
 
   async function signOutAccount() {
     await signOutAppUser();
     setAccountStatus("Signed out");
+    setAuthPhase("signed-out");
+    setScreen("home");
     showMessage("Signed out");
+  }
+
+  if (authPhase === "loading") {
+    return (
+      <main className="app-shell">
+        <div className="phone-frame auth-frame">
+          <CourtLines />
+          <SplashScreen />
+        </div>
+      </main>
+    );
+  }
+
+  if (authPhase === "signed-out") {
+    return (
+      <main className="app-shell">
+        <div className="phone-frame auth-frame">
+          <CourtLines />
+          <AccountScreen
+            accountStatus={accountStatus}
+            isEntry
+            onAnonymous={continueAnonymously}
+            onCreate={createAccount}
+            onNavigate={setScreen}
+            onSignIn={signInAccount}
+            onSignOut={signOutAccount}
+          />
+          {appMessage && <div className="toast">{appMessage}</div>}
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -233,6 +293,18 @@ function HomeScreen({ onAction, onNavigate }: { onAction: (message: string) => v
         <div className="progress-ring">75%</div>
         <Metric label="Points Won" value="256" delta="+18" />
       </article>
+    </section>
+  );
+}
+
+function SplashScreen() {
+  return (
+    <section className="screen content splash-screen">
+      <AceTrackWordmark />
+      <div className="splash-orbit">
+        <TennisBall />
+      </div>
+      <p>Loading your court...</p>
     </section>
   );
 }
@@ -591,6 +663,7 @@ function ProfileScreen({
 
 function AccountScreen({
   accountStatus,
+  isEntry = false,
   onAnonymous,
   onCreate,
   onNavigate,
@@ -598,6 +671,7 @@ function AccountScreen({
   onSignOut
 }: {
   accountStatus: string;
+  isEntry?: boolean;
   onAnonymous: () => Promise<void>;
   onCreate: (email: string, password: string) => Promise<void>;
   onNavigate: (screen: Screen) => void;
@@ -620,16 +694,17 @@ function AccountScreen({
       else await onCreate(email, password);
       setFormStatus("Account ready.");
     } catch (error) {
-      setFormStatus(error instanceof Error ? error.message : "Account action failed.");
+      setFormStatus(getAuthErrorMessage(error));
     }
   }
 
   return (
-    <section className="screen content account-screen">
+    <section className={`screen content account-screen ${isEntry ? "entry-screen" : ""}`}>
       <header className="simple-header">
-        <p className="eyebrow">AceTrack account</p>
-        <h1>Save every match.</h1>
-        <p>{accountStatus}</p>
+        {isEntry && <AceTrackWordmark />}
+        <p className="eyebrow">{isEntry ? "Welcome" : "AceTrack account"}</p>
+        <h1>{isEntry ? "Log in to start tracking." : "Save every match."}</h1>
+        <p>{isEntry ? "Create your profile, save matches, and keep every point synced." : accountStatus}</p>
       </header>
 
       <article className="login-card">
@@ -650,8 +725,17 @@ function AccountScreen({
         <p className="save-status">{formStatus}</p>
       </article>
 
-      <button className="ghost-button" onClick={() => onNavigate("profile")}>Back to profile</button>
+      {!isEntry && <button className="ghost-button" onClick={() => onNavigate("profile")}>Back to profile</button>}
     </section>
+  );
+}
+
+function AceTrackWordmark() {
+  return (
+    <div className="wordmark" aria-label="AceTrack">
+      <span><TennisBall /></span>
+      <strong>AceTrack</strong>
+    </div>
   );
 }
 
@@ -731,6 +815,19 @@ function BottomNav({ active, onNavigate }: { active: Screen; onNavigate: (screen
 function formatAccountStatus(appUser: AppUser) {
   if (appUser.mode === "local") return "Local guest account";
   return appUser.isAnonymous ? "Firebase guest account" : "Firebase account";
+}
+
+function getAuthErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+
+  if (message.includes("auth/email-already-in-use")) return "That email already has an account. Try signing in.";
+  if (message.includes("auth/invalid-email")) return "Use a valid email address.";
+  if (message.includes("auth/weak-password")) return "Use a stronger password with at least 6 characters.";
+  if (message.includes("auth/wrong-password") || message.includes("auth/invalid-credential")) return "Email or password is incorrect.";
+  if (message.includes("auth/operation-not-allowed")) return "Email login is not enabled yet in Firebase.";
+  if (message.includes("auth/network-request-failed")) return "Network error. Check your connection and try again.";
+
+  return message || "Account action failed. Try again.";
 }
 
 function CourtLines() {

@@ -8,6 +8,21 @@ export type AppUser = {
   mode: "firebase" | "local";
 };
 
+export async function getSignedInAppUser(): Promise<AppUser | undefined> {
+  if (!isFirebaseConfigured()) return undefined;
+
+  const auth = await getFirebaseAuth();
+  if (!auth) return undefined;
+
+  const { onAuthStateChanged } = await import("firebase/auth");
+  return new Promise((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe();
+      resolve(user ? { id: user.uid, isAnonymous: user.isAnonymous, mode: "firebase" } : undefined);
+    });
+  });
+}
+
 export async function getCurrentAppUser(): Promise<AppUser> {
   if (!isFirebaseConfigured()) {
     return getLocalUser();
@@ -34,8 +49,11 @@ export async function createEmailAccount(email: string, password: string): Promi
   const auth = await getFirebaseAuth();
   if (!auth) return getLocalUser();
 
-  const { createUserWithEmailAndPassword } = await import("firebase/auth");
-  const credential = await createUserWithEmailAndPassword(auth, email, password);
+  const { createUserWithEmailAndPassword, EmailAuthProvider, linkWithCredential } = await import("firebase/auth");
+  const emailCredential = EmailAuthProvider.credential(email, password);
+  const credential = auth.currentUser?.isAnonymous
+    ? await linkWithCredential(auth.currentUser, emailCredential)
+    : await createUserWithEmailAndPassword(auth, email, password);
   return { id: credential.user.uid, isAnonymous: credential.user.isAnonymous, mode: "firebase" };
 }
 

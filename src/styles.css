@@ -3736,3 +3736,169 @@ h1,
     min-height: 62px;
   }
 }
+
+/* Auth entry and branded loading screen. */
+.auth-frame {
+  background:
+    radial-gradient(circle at 50% 16%, rgba(205, 234, 95, 0.26), transparent 26%),
+    radial-gradient(circle at 92% 88%, rgba(205, 234, 95, 0.14), transparent 24%),
+    var(--paper);
+}
+
+.auth-frame .court-lines {
+  inset: auto 22px 54px;
+  height: 230px;
+  opacity: 0.32;
+  transform: perspective(520px) rotateX(58deg);
+  transform-origin: bottom;
+}
+
+.wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+}
+
+.wordmark > span {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #eef8c7;
+  box-shadow: 0 12px 30px rgba(159, 198, 58, 0.2);
+}
+
+.wordmark .tennis-ball {
+  width: 26px;
+  height: 26px;
+}
+
+.wordmark strong {
+  color: var(--ink);
+  font-size: 1.48rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.splash-screen {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 28px;
+  text-align: center;
+}
+
+.splash-orbit {
+  width: 128px;
+  height: 128px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background:
+    conic-gradient(from 90deg, var(--accent-strong), rgba(205, 234, 95, 0.12), var(--accent-strong)),
+    #f7fadf;
+  box-shadow: 0 24px 58px rgba(70, 83, 55, 0.14);
+  animation: acetrack-spin 1200ms linear infinite;
+}
+
+.splash-orbit .tennis-ball {
+  width: 76px;
+  height: 76px;
+  background-color: #ecf982;
+  box-shadow: inset 0 0 0 2px rgba(159, 198, 58, 0.3);
+  animation: acetrack-counter-spin 1200ms linear infinite;
+}
+
+.splash-screen p {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.entry-screen {
+  height: 100%;
+  display: grid;
+  align-content: center;
+  gap: 22px;
+  padding-top: 34px;
+}
+
+.entry-screen .simple-header {
+  display: grid;
+  gap: 14px;
+}
+
+.entry-screen .simple-header .wordmark {
+  margin-bottom: 12px;
+}
+
+.entry-screen .simple-header h1 {
+  max-width: 360px;
+  font-size: clamp(2.35rem, 10vw, 3.15rem);
+}
+
+.entry-screen .simple-header p:not(.eyebrow) {
+  max-width: 340px;
+  margin: 0;
+}
+
+.entry-screen .login-card {
+  margin-top: 0;
+}
+
+@keyframes acetrack-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes acetrack-counter-spin {
+  to {
+    transform: rotate(-1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-orbit,
+  .splash-orbit .tennis-ball {
+    animation: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .entry-screen {
+    align-content: start;
+    padding-top: 32px;
+  }
+
+  .entry-screen .simple-header h1 {
+    font-size: clamp(2.2rem, 11vw, 2.85rem);
+  }
+}
+
+@media (min-width: 720px) and (orientation: landscape) {
+  .auth-frame {
+    width: min(100%, 980px);
+    height: min(100svh - 32px, 680px);
+  }
+
+  .auth-frame .entry-screen {
+    grid-template-columns: minmax(280px, 0.8fr) minmax(360px, 1fr);
+    align-items: center;
+    align-content: center;
+    column-gap: 52px;
+    padding: 48px;
+  }
+
+  .entry-screen .simple-header,
+  .entry-screen .login-card {
+    margin: 0;
+  }
+
+  .auth-frame .splash-screen {
+    height: 100%;
+  }
+}
