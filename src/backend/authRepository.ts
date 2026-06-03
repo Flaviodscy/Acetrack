@@ -30,6 +30,32 @@ export async function getCurrentAppUser(): Promise<AppUser> {
   }
 }
 
+export async function createEmailAccount(email: string, password: string): Promise<AppUser> {
+  const auth = await getFirebaseAuth();
+  if (!auth) return getLocalUser();
+
+  const { createUserWithEmailAndPassword } = await import("firebase/auth");
+  const credential = await createUserWithEmailAndPassword(auth, email, password);
+  return { id: credential.user.uid, isAnonymous: credential.user.isAnonymous, mode: "firebase" };
+}
+
+export async function signInWithEmail(email: string, password: string): Promise<AppUser> {
+  const auth = await getFirebaseAuth();
+  if (!auth) return getLocalUser();
+
+  const { signInWithEmailAndPassword } = await import("firebase/auth");
+  const credential = await signInWithEmailAndPassword(auth, email, password);
+  return { id: credential.user.uid, isAnonymous: credential.user.isAnonymous, mode: "firebase" };
+}
+
+export async function signOutAppUser() {
+  const auth = await getFirebaseAuth();
+  if (!auth) return;
+
+  const { signOut } = await import("firebase/auth");
+  await signOut(auth);
+}
+
 function getLocalUser(): AppUser {
   let id = window.localStorage.getItem(LOCAL_USER_KEY);
   if (!id) {

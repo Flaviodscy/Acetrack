@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Apple,
@@ -14,6 +14,10 @@ import {
   Gauge,
   Heart,
   Home,
+  Lock,
+  LogIn,
+  LogOut,
+  Mail,
   MapPin,
   Mic,
   Minus,
@@ -33,13 +37,19 @@ import {
 } from "lucide-react";
 import { highlights, nearbyPlayers, opponent, recapStats, recentMatches, user } from "./data/mockData";
 import { createMatchRecord } from "./backend/createMatchRecord";
-import { getCurrentAppUser } from "./backend/authRepository";
+import {
+  createEmailAccount,
+  getCurrentAppUser,
+  signInWithEmail,
+  signOutAppUser,
+  type AppUser
+} from "./backend/authRepository";
 import { getBackendMode, saveMatchRecord } from "./backend/matchRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint } from "./lib/tennisScoring";
 import "./styles.css";
 
-type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile";
+type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account";
 
 const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
   { screen: "home", label: "Play", icon: Home },
@@ -55,6 +65,8 @@ export default function App() {
   const [activeFilter, setActiveFilter] = usePersistentState("acetrack:highlight-filter", "All");
   const [socialTab, setSocialTab] = usePersistentState("acetrack:social-tab", "Nearby");
   const [saveStatus, setSaveStatus] = useState("");
+  const [appMessage, setAppMessage] = useState("");
+  const [accountStatus, setAccountStatus] = useState("Checking account...");
 
   const pointDisplay = getPointDisplay(match);
   const sets = getCompletedSets(match);
@@ -66,6 +78,17 @@ export default function App() {
     return highlights.filter((item) => item.tag === activeFilter);
   }, [activeFilter]);
 
+  useEffect(() => {
+    getCurrentAppUser()
+      .then((appUser) => setAccountStatus(formatAccountStatus(appUser)))
+      .catch(() => setAccountStatus("Account unavailable"));
+  }, []);
+
+  function showMessage(message: string) {
+    setAppMessage(message);
+    window.setTimeout(() => setAppMessage(""), 2400);
+  }
+
   function addPoint(player: 0 | 1) {
     const next = scorePoint(match, player);
     setMatch(next);
@@ -75,20 +98,49 @@ export default function App() {
   async function saveCurrentMatch() {
     setSaveStatus("Saving...");
     const appUser = await getCurrentAppUser();
+    setAccountStatus(formatAccountStatus(appUser));
     const result = await saveMatchRecord(createMatchRecord(match, appUser.id));
     setSaveStatus(result.mode === "firebase" ? "Saved to Firebase" : "Saved locally");
+  }
+
+  async function signInAccount(email: string, password: string) {
+    setAccountStatus("Signing in...");
+    const appUser = await signInWithEmail(email, password);
+    setAccountStatus(formatAccountStatus(appUser));
+    showMessage("Signed in");
+  }
+
+  async function createAccount(email: string, password: string) {
+    setAccountStatus("Creating account...");
+    const appUser = await createEmailAccount(email, password);
+    setAccountStatus(formatAccountStatus(appUser));
+    showMessage("Account created");
+  }
+
+  async function continueAnonymously() {
+    setAccountStatus("Starting guest session...");
+    const appUser = await getCurrentAppUser();
+    setAccountStatus(formatAccountStatus(appUser));
+    showMessage("Guest session ready");
+  }
+
+  async function signOutAccount() {
+    await signOutAppUser();
+    setAccountStatus("Signed out");
+    showMessage("Signed out");
   }
 
   return (
     <main className="app-shell">
       <div className={`phone-frame ${screen === "live" ? "is-live" : ""}`}>
         <CourtLines />
-        {screen === "home" && <HomeScreen onNavigate={setScreen} />}
+        {screen === "home" && <HomeScreen onAction={showMessage} onNavigate={setScreen} />}
         {screen === "live" && (
           <LiveMatchScreen
             matchWinner={match.winner}
             pointDisplay={pointDisplay}
             sets={sets}
+            onAction={showMessage}
             onPoint={addPoint}
             onUndo={() => setMatch(undoPoint(match))}
             onComplete={() => setScreen("complete")}
@@ -109,18 +161,32 @@ export default function App() {
           <HighlightsScreen
             activeFilter={activeFilter}
             highlights={visibleHighlights}
+            onAction={showMessage}
             onFilter={setActiveFilter}
           />
         )}
-        {screen === "social" && <SocialScreen activeTab={socialTab} onTab={setSocialTab} />}
-        {screen === "profile" && <ProfileScreen />}
+        {screen === "social" && <SocialScreen activeTab={socialTab} onAction={showMessage} onTab={setSocialTab} />}
+        {screen === "profile" && (
+          <ProfileScreen accountStatus={accountStatus} onAction={showMessage} onNavigate={setScreen} />
+        )}
+        {screen === "account" && (
+          <AccountScreen
+            accountStatus={accountStatus}
+            onAnonymous={continueAnonymously}
+            onCreate={createAccount}
+            onNavigate={setScreen}
+            onSignIn={signInAccount}
+            onSignOut={signOutAccount}
+          />
+        )}
         <BottomNav active={screen} onNavigate={setScreen} />
+        {appMessage && <div className="toast">{appMessage}</div>}
       </div>
     </main>
   );
 }
 
-function HomeScreen({ onNavigate }: { onNavigate: (screen: Screen) => void }) {
+function HomeScreen({ onAction, onNavigate }: { onAction: (message: string) => void; onNavigate: (screen: Screen) => void }) {
   return (
     <section className="screen content home-screen">
       <header className="topbar">
@@ -129,20 +195,20 @@ function HomeScreen({ onNavigate }: { onNavigate: (screen: Screen) => void }) {
           <h1>Play smarter. Every point counts.</h1>
           <p className="hero-copy">Connect, compete, and improve your game.</p>
         </div>
-        <button className="icon-button"><Bell size={21} /></button>
+        <button className="icon-button" aria-label="Notifications" onClick={() => onAction("No new notifications")}><Bell size={21} /></button>
       </header>
 
       <h2 className="section-title">Get started</h2>
       <div className="start-grid">
         <InfoCard icon={Play} title="Start Match" value="Begin scoring" onClick={() => onNavigate("live")} />
         <InfoCard icon={Users} title="Quick Challenge" value="Find players" onClick={() => onNavigate("social")} />
-        <InfoCard icon={Apple} title="Watch Connected" value="Ready" />
+        <InfoCard icon={Apple} title="Watch Connected" value="Ready" onClick={() => onAction("Watch companion is ready")} />
       </div>
 
       <article className="recent-match-card">
         <div className="section-row">
           <h2>Recent Match</h2>
-          <button>View all</button>
+          <button onClick={() => onNavigate("highlights")}>View all</button>
         </div>
         <div className="recent-match-grid">
           <div className="mini-player">
@@ -175,6 +241,7 @@ function LiveMatchScreen({
   pointDisplay,
   sets,
   matchWinner,
+  onAction,
   onPoint,
   onUndo,
   onComplete
@@ -182,6 +249,7 @@ function LiveMatchScreen({
   pointDisplay: [string, string];
   sets: ReturnType<typeof getCompletedSets>;
   matchWinner?: 0 | 1;
+  onAction: (message: string) => void;
   onPoint: (player: 0 | 1) => void;
   onUndo: () => void;
   onComplete: () => void;
@@ -226,7 +294,7 @@ function LiveMatchScreen({
           <span className="action-icon"><RotateCcw size={24} /></span>
           <span className="action-label">Undo</span>
         </button>
-        <button className="match-action">
+        <button className="match-action" onClick={() => onAction("Voice tag saved")}>
           <span className="action-icon"><Mic size={24} /></span>
           <span className="action-label">Voice</span>
         </button>
@@ -314,10 +382,12 @@ function CompleteScreen({
 function HighlightsScreen({
   activeFilter,
   highlights,
+  onAction,
   onFilter
 }: {
   activeFilter: string;
   highlights: typeof import("./data/mockData").highlights;
+  onAction: (message: string) => void;
   onFilter: (filter: string) => void;
 }) {
   return (
@@ -337,11 +407,11 @@ function HighlightsScreen({
           <span>vs</span>
           <Portrait className={opponent.portrait} initials={opponent.avatar} />
         </div>
-        <button>Generate Share Card <ArrowRight size={17} /></button>
+        <button onClick={() => onAction("Share card generated")}>Generate Share Card <ArrowRight size={17} /></button>
       </article>
       <div className="section-row">
         <h2>Highlights</h2>
-        <button className="text-button">Select</button>
+        <button className="text-button" onClick={() => onAction("Select mode enabled")}>Select</button>
       </div>
       <div className="filter-row">
         {["All", "Ace", "Rally", "Winner", "Match Point"].map((filter) => (
@@ -349,7 +419,7 @@ function HighlightsScreen({
             {filter}
           </button>
         ))}
-        <button className="filter-icon"><SlidersHorizontal size={20} /></button>
+        <button className="filter-icon" aria-label="Highlight filters" onClick={() => onAction("Highlight filters ready")}><SlidersHorizontal size={20} /></button>
       </div>
       <div className="highlight-grid">
         {highlights.map((item) => (
@@ -362,7 +432,10 @@ function HighlightsScreen({
               <h3>{item.title}</h3>
               <p>{item.score}</p>
             </div>
-            <div className="card-icons"><Heart size={18} /><MoreHorizontal size={18} /></div>
+            <div className="card-icons">
+              <button aria-label={`Favorite ${item.title}`} onClick={() => onAction(`${item.title} favorited`)}><Heart size={18} /></button>
+              <button aria-label={`Options for ${item.title}`} onClick={() => onAction(`Options opened for ${item.title}`)}><MoreHorizontal size={18} /></button>
+            </div>
           </article>
         ))}
       </div>
@@ -370,7 +443,15 @@ function HighlightsScreen({
   );
 }
 
-function SocialScreen({ activeTab, onTab }: { activeTab: string; onTab: (tab: string) => void }) {
+function SocialScreen({
+  activeTab,
+  onAction,
+  onTab
+}: {
+  activeTab: string;
+  onAction: (message: string) => void;
+  onTab: (tab: string) => void;
+}) {
   return (
     <section className="screen content social-screen">
       <header className="simple-header">
@@ -385,8 +466,8 @@ function SocialScreen({ activeTab, onTab }: { activeTab: string; onTab: (tab: st
         ))}
       </div>
       <div className="section-row">
-        <div className="distance-pill"><MapPin size={18} /> Within 10 miles <ChevronRight size={16} /></div>
-        <button className="icon-button"><SlidersHorizontal size={20} /></button>
+        <button className="distance-pill" onClick={() => onAction("Distance set to 10 miles")}><MapPin size={18} /> Within 10 miles <ChevronRight size={16} /></button>
+        <button className="icon-button" aria-label="Player filters" onClick={() => onAction("Player filters ready")}><SlidersHorizontal size={20} /></button>
       </div>
       <p className="list-label">Nearby players</p>
       <div className="player-list">
@@ -401,7 +482,7 @@ function SocialScreen({ activeTab, onTab }: { activeTab: string; onTab: (tab: st
             </div>
             <span className="streak"><Flame size={16} /> {player.streak} day streak</span>
             <div className="points"><strong>{player.points.toLocaleString()}</strong><span>PTS</span></div>
-            <button>Challenge</button>
+            <button onClick={() => onAction(`Challenge sent to ${player.name}`)}>Challenge</button>
           </article>
         ))}
       </div>
@@ -418,7 +499,15 @@ function SocialScreen({ activeTab, onTab }: { activeTab: string; onTab: (tab: st
   );
 }
 
-function ProfileScreen() {
+function ProfileScreen({
+  accountStatus,
+  onAction,
+  onNavigate
+}: {
+  accountStatus: string;
+  onAction: (message: string) => void;
+  onNavigate: (screen: Screen) => void;
+}) {
   return (
     <section className="screen content profile-screen">
       <div className="profile-hero">
@@ -428,8 +517,16 @@ function ProfileScreen() {
           <p><MapPin size={17} /> {user.location}</p>
           <span className="rating-pill">{user.rating}</span>
         </div>
-        <TennisBall />
+        <button className="account-button" onClick={() => onNavigate("account")}><LogIn size={18} /> Account</button>
       </div>
+
+      <article className="account-card">
+        <div>
+          <p className="eyebrow">Account</p>
+          <strong>{accountStatus}</strong>
+        </div>
+        <button onClick={() => onNavigate("account")}>Manage</button>
+      </article>
 
       <div className="level-row">
         <div><span>Level</span><strong>{user.level}</strong></div>
@@ -442,7 +539,7 @@ function ProfileScreen() {
       <article className="flat-section">
         <div className="section-row">
           <h2>Skills</h2>
-          <button className="text-button">View all</button>
+          <button className="text-button" onClick={() => onAction("Full skills view coming next")}>View all</button>
         </div>
         <div className="skill-list">
           {user.skills.map(([skill, value]) => (
@@ -459,19 +556,22 @@ function ProfileScreen() {
       <article className="flat-section">
         <div className="section-row">
           <h2>Equipment</h2>
-          <button className="text-button">View all</button>
+          <button className="text-button" onClick={() => onAction("Equipment editor coming next")}>View all</button>
         </div>
-        <dl className="equipment-list">
+        <div className="equipment-list">
           {Object.entries(user.equipment).map(([label, value]) => (
-            <div key={label}><dt><Gauge size={20} /> {formatEquipmentLabel(label)}</dt><dd>{value}<ChevronRight size={17} /></dd></div>
+            <button className="equipment-row" key={label} onClick={() => onAction(`${formatEquipmentLabel(label)} selected`)}>
+              <span className="equipment-label"><Gauge size={20} /> {formatEquipmentLabel(label)}</span>
+              <span className="equipment-value">{value}<ChevronRight size={17} /></span>
+            </button>
           ))}
-        </dl>
+        </div>
       </article>
 
       <article className="pro-card">
         <div className="section-row">
           <h2>Compare with pros</h2>
-          <button className="text-button">View all</button>
+          <button className="text-button" onClick={() => onAction("Pro comparison opened")}>View all</button>
         </div>
         <div className="pro-content">
           <Portrait className="portrait-pro" initials="CA" />
@@ -483,6 +583,70 @@ function ProfileScreen() {
           </div>
         </div>
       </article>
+    </section>
+  );
+}
+
+function AccountScreen({
+  accountStatus,
+  onAnonymous,
+  onCreate,
+  onNavigate,
+  onSignIn,
+  onSignOut
+}: {
+  accountStatus: string;
+  onAnonymous: () => Promise<void>;
+  onCreate: (email: string, password: string) => Promise<void>;
+  onNavigate: (screen: Screen) => void;
+  onSignIn: (email: string, password: string) => Promise<void>;
+  onSignOut: () => Promise<void>;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [formStatus, setFormStatus] = useState("");
+
+  async function runAuth(action: "sign-in" | "create") {
+    if (!email || password.length < 6) {
+      setFormStatus("Use an email and a password with 6+ characters.");
+      return;
+    }
+
+    try {
+      setFormStatus(action === "sign-in" ? "Signing in..." : "Creating account...");
+      if (action === "sign-in") await onSignIn(email, password);
+      else await onCreate(email, password);
+      setFormStatus("Account ready.");
+    } catch (error) {
+      setFormStatus(error instanceof Error ? error.message : "Account action failed.");
+    }
+  }
+
+  return (
+    <section className="screen content account-screen">
+      <header className="simple-header">
+        <p className="eyebrow">AceTrack account</p>
+        <h1>Save every match.</h1>
+        <p>{accountStatus}</p>
+      </header>
+
+      <article className="login-card">
+        <label>
+          <span><Mail size={17} /> Email</span>
+          <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" type="email" />
+        </label>
+        <label>
+          <span><Lock size={17} /> Password</span>
+          <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="6+ characters" type="password" />
+        </label>
+        <button className="hero-action compact" onClick={() => runAuth("sign-in")}><LogIn size={18} /> Sign in</button>
+        <button className="ghost-button" onClick={() => runAuth("create")}>Create account</button>
+        <button className="ghost-button" onClick={onAnonymous}>Continue as guest</button>
+        <button className="ghost-button" onClick={onSignOut}><LogOut size={18} /> Sign out</button>
+        <p className="save-status">{formStatus}</p>
+      </article>
+
+      <button className="ghost-button" onClick={() => onNavigate("profile")}>Back to profile</button>
     </section>
   );
 }
@@ -558,6 +722,11 @@ function BottomNav({ active, onNavigate }: { active: Screen; onNavigate: (screen
       ))}
     </nav>
   );
+}
+
+function formatAccountStatus(appUser: AppUser) {
+  if (appUser.mode === "local") return "Local guest account";
+  return appUser.isAnonymous ? "Firebase guest account" : "Firebase account";
 }
 
 function CourtLines() {

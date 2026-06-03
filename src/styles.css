@@ -453,6 +453,23 @@ dt {
   text-align: center;
 }
 
+.toast {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: 108px;
+  max-width: calc(100% - 48px);
+  transform: translateX(-50%);
+  padding: 11px 16px;
+  border-radius: 999px;
+  background: rgba(28, 37, 24, 0.92);
+  color: white;
+  font-size: 0.86rem;
+  font-weight: 800;
+  text-align: center;
+  box-shadow: 0 18px 40px rgba(28, 37, 24, 0.22);
+}
+
 .metric {
   padding: 18px;
 }
@@ -2423,5 +2440,641 @@ dt {
   .action-icon {
     width: 62px;
     height: 62px;
+  }
+}
+
+/* Final responsive polish: current component names, spacious landscape, compact phones. */
+button {
+  touch-action: manipulation;
+}
+
+.phone-frame {
+  max-height: 100svh;
+}
+
+.screen {
+  padding-bottom: 112px;
+}
+
+.phone-frame.is-live .screen {
+  padding-bottom: 28px;
+}
+
+.section-row {
+  gap: 14px;
+}
+
+.section-row h2,
+.section-row button,
+.text-button {
+  flex: 0 0 auto;
+}
+
+.section-row h2 {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.toast {
+  pointer-events: none;
+}
+
+.match-action:focus-visible,
+.info-card:focus-visible,
+.icon-button:focus-visible,
+.text-button:focus-visible,
+.ghost-button:focus-visible,
+.hero-action:focus-visible,
+.filter-row button:focus-visible,
+.tabs button:focus-visible,
+.player-row button:focus-visible,
+.equipment-row:focus-visible,
+.account-button:focus-visible,
+.account-card button:focus-visible {
+  outline: 3px solid rgba(166, 218, 32, 0.3);
+  outline-offset: 3px;
+}
+
+@media (max-width: 420px) {
+  .phone-frame {
+    width: 100%;
+    height: 100svh;
+    border-radius: 0;
+  }
+
+  .content {
+    padding: 22px 18px 28px;
+  }
+
+  .home-screen h1,
+  .simple-header h1 {
+    font-size: 2.7rem;
+    line-height: 1;
+  }
+
+  .start-grid {
+    margin-inline: -2px;
+  }
+
+  .recent-match-card,
+  .progress-card,
+  .score-card,
+  .set-table,
+  .feature-card,
+  .login-card,
+  .account-card,
+  .pro-card,
+  .ladder-card {
+    border-radius: 20px;
+  }
+
+  .highlight-card .card-body {
+    padding: 12px;
+  }
+
+  .bottom-nav {
+    left: 10px;
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (max-width: 360px) {
+  .home-screen h1,
+  .simple-header h1 {
+    font-size: 2.35rem;
+  }
+
+  .hero-copy {
+    font-size: 0.98rem;
+  }
+
+  .start-grid {
+    grid-template-columns: repeat(3, minmax(86px, 1fr));
+  }
+
+  .info-card strong {
+    font-size: 0.95rem;
+  }
+
+  .info-card > span:not(.icon-orb) {
+    font-size: 0.78rem;
+  }
+
+  .player-row {
+    gap: 8px;
+  }
+}
+
+@media (min-width: 720px) and (orientation: landscape) {
+  .app-shell {
+    padding: 16px;
+  }
+
+  .phone-frame:not(.is-live) {
+    width: min(100%, 1040px);
+    height: min(100svh - 32px, 720px);
+    border-radius: 34px;
+  }
+
+  .phone-frame:not(.is-live) .screen {
+    padding: 34px 34px 118px;
+  }
+
+  .phone-frame:not(.is-live) .bottom-nav {
+    left: 28px;
+    right: 28px;
+  }
+
+  .phone-frame:not(.is-live) .court-lines {
+    inset: 64px 36px auto auto;
+    width: 52%;
+  }
+
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen {
+    grid-template-columns: minmax(260px, 0.82fr) minmax(420px, 1.18fr);
+    column-gap: 34px;
+  }
+
+  .profile-screen .profile-hero,
+  .social-screen .simple-header,
+  .highlights-screen .simple-header,
+  .account-screen .simple-header {
+    position: sticky;
+    top: 0;
+    align-self: start;
+  }
+
+  .player-list {
+    max-height: 360px;
+    overflow: auto;
+    padding-right: 4px;
+  }
+}
+
+@media (orientation: landscape) {
+  .phone-frame.is-live {
+    width: 100vw;
+    height: 100svh;
+  }
+
+  .phone-frame.is-live .screen {
+    height: 100svh;
+  }
+
+  .live-screen {
+    grid-template-columns: minmax(380px, 1fr) minmax(360px, 0.9fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    padding: 22px clamp(20px, 4vw, 44px);
+    gap: 16px clamp(22px, 4vw, 42px);
+  }
+
+  .live-screen .match-status {
+    margin: 0;
+  }
+
+  .live-screen .score-card {
+    display: grid;
+    align-content: center;
+    gap: clamp(14px, 3vh, 26px);
+    margin: 0;
+    min-height: 0;
+  }
+
+  .live-screen .player-score {
+    min-height: clamp(92px, 25vh, 154px);
+  }
+
+  .live-screen .player-score .portrait {
+    width: clamp(58px, 11vh, 86px);
+    height: clamp(58px, 11vh, 86px);
+  }
+
+  .live-screen .player-score strong {
+    font-size: clamp(4.2rem, 15vh, 8rem);
+  }
+
+  .live-screen .set-table {
+    margin: 0;
+  }
+
+  .live-screen .timer-row {
+    margin: 0;
+  }
+
+  .live-screen .point-actions {
+    margin: 0;
+    padding: 0;
+    align-self: end;
+    grid-template-columns: repeat(5, minmax(64px, 1fr));
+  }
+
+  .live-screen .match-action {
+    min-height: clamp(78px, 17vh, 104px);
+  }
+}
+
+@media (max-height: 460px) and (orientation: landscape) {
+  .live-screen {
+    padding-block: 12px;
+    gap: 10px 22px;
+  }
+
+  .live-screen .match-status strong,
+  .live-screen .match-status span {
+    font-size: 0.78rem;
+  }
+
+  .live-screen .score-card {
+    padding: 12px 16px;
+  }
+
+  .live-screen .player-score {
+    grid-template-columns: 54px minmax(0, 1fr) minmax(72px, auto);
+    min-height: 72px;
+  }
+
+  .live-screen .player-score h2 {
+    font-size: 1rem;
+  }
+
+  .live-screen .player-score .portrait {
+    width: 52px;
+    height: 52px;
+  }
+
+  .live-screen .player-score strong {
+    font-size: clamp(3.2rem, 17vh, 4.8rem);
+  }
+
+  .live-screen .set-table {
+    padding: 8px 12px;
+  }
+
+  .live-screen .set-table th,
+  .live-screen .set-table td {
+    padding-block: 5px;
+  }
+
+  .live-screen .timer-row {
+    padding: 10px 12px;
+  }
+
+  .live-screen .point-actions {
+    gap: 8px;
+  }
+
+  .live-screen .match-action {
+    min-height: 66px;
+    gap: 6px;
+  }
+
+  .live-screen .action-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .live-screen .action-label {
+    font-size: 0.7rem;
+  }
+}
+
+/* Account and fully-clickable controls. */
+.account-button,
+.account-card button,
+.equipment-row {
+  border: 0;
+  background: transparent;
+}
+
+.account-button {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #eef8c7;
+  color: #536b16;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.account-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0 4px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.8);
+  box-shadow: inset 0 0 0 1px var(--line), 0 12px 28px rgba(91, 108, 65, 0.07);
+}
+
+.account-card p {
+  margin-bottom: 4px;
+}
+
+.account-card strong {
+  color: #1b2019;
+  font-size: 0.95rem;
+}
+
+.account-card button {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #eef8c7;
+  color: #536b16;
+  font-weight: 850;
+}
+
+.equipment-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  text-align: left;
+}
+
+.equipment-row .equipment-label,
+.equipment-row .equipment-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.equipment-row .equipment-label {
+  color: #20251f;
+}
+
+.equipment-row .equipment-value {
+  min-width: 0;
+  margin: 0;
+  justify-content: flex-end;
+  color: var(--text-soft);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.login-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+  padding: 20px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 16px 36px rgba(91, 108, 65, 0.08), inset 0 0 0 1px var(--line);
+}
+
+.login-card label {
+  display: grid;
+  gap: 8px;
+}
+
+.login-card label span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #394332;
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
+.login-card input {
+  width: 100%;
+  min-height: 52px;
+  border: 0;
+  border-radius: 18px;
+  padding: 0 14px;
+  background: #f5f7ed;
+  color: #182019;
+  font: inherit;
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(38, 54, 31, 0.07);
+}
+
+.login-card input:focus {
+  box-shadow: inset 0 0 0 2px var(--accent-strong);
+}
+
+.account-screen .simple-header h1 {
+  max-width: 330px;
+}
+
+.card-icons button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: transparent;
+  color: #8f9888;
+}
+
+.distance-pill {
+  border: 0;
+}
+
+@media (max-width: 360px) {
+  .content {
+    padding-inline: 14px;
+  }
+
+  .home-screen h1,
+  .simple-header h1 {
+    font-size: 2.3rem;
+  }
+
+  .player-score {
+    grid-template-columns: 54px minmax(0, 1fr) 56px;
+    gap: 10px;
+  }
+
+  .player-score .portrait {
+    width: 52px;
+    height: 52px;
+  }
+
+  .player-score h2 {
+    font-size: 0.98rem;
+  }
+
+  .set-table {
+    padding-inline: 10px;
+  }
+
+  .set-table th,
+  .set-table td {
+    padding-inline: 5px;
+  }
+
+  .profile-hero {
+    grid-template-columns: 70px minmax(0, 1fr);
+  }
+
+  .profile-hero .portrait.large {
+    width: 70px;
+    height: 70px;
+  }
+
+  .account-button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .skill {
+    grid-template-columns: 20px 70px minmax(58px, 1fr) 24px;
+    gap: 8px;
+  }
+
+  .skill span,
+  .skill strong,
+  .equipment-row {
+    font-size: 0.82rem;
+  }
+}
+
+@media (min-width: 720px) and (orientation: landscape) {
+  .phone-frame:not(.is-live) {
+    width: min(100vw - 32px, 980px);
+    height: min(100vh - 32px, 720px);
+  }
+
+  .phone-frame:not(.is-live) .screen {
+    height: calc(100% - 92px);
+  }
+
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.82fr) minmax(360px, 1fr);
+    align-content: start;
+    gap: 18px 28px;
+  }
+
+  .home-screen .topbar,
+  .home-screen .section-title,
+  .profile-screen .profile-hero,
+  .social-screen .simple-header,
+  .highlights-screen .simple-header,
+  .account-screen .simple-header {
+    grid-column: 1;
+  }
+
+  .home-screen .start-grid,
+  .home-screen .recent-match-card,
+  .home-screen .progress-card,
+  .profile-screen .level-row,
+  .profile-screen .flat-section,
+  .profile-screen .pro-card,
+  .profile-screen .account-card,
+  .social-screen .tabs,
+  .social-screen .section-row,
+  .social-screen .list-label,
+  .social-screen .player-list,
+  .social-screen .ladder-card,
+  .highlights-screen .feature-card,
+  .highlights-screen > .section-row,
+  .highlights-screen .filter-row,
+  .highlights-screen .highlight-grid,
+  .account-screen .login-card,
+  .account-screen > .ghost-button {
+    grid-column: 2;
+  }
+
+  .start-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .highlight-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* End-of-file responsive authority. */
+@media (min-width: 720px) and (orientation: landscape) {
+  .app-shell {
+    padding: 16px;
+  }
+
+  .phone-frame:not(.is-live) {
+    width: min(100%, 1040px);
+    height: min(100svh - 32px, 720px);
+    border-radius: 34px;
+  }
+
+  .phone-frame:not(.is-live) .screen {
+    height: calc(100% - 92px);
+    padding: 34px 34px 118px;
+  }
+
+  .phone-frame:not(.is-live) .bottom-nav {
+    left: 28px;
+    right: 28px;
+  }
+
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen {
+    grid-template-columns: minmax(260px, 0.82fr) minmax(420px, 1.18fr);
+    gap: 18px 34px;
+  }
+}
+
+@media (orientation: landscape) {
+  .phone-frame.is-live {
+    width: 100vw;
+    height: 100svh;
+  }
+
+  .phone-frame.is-live .screen {
+    height: 100svh;
+    padding-bottom: 28px;
+  }
+
+  .live-screen {
+    grid-template-columns: minmax(380px, 1fr) minmax(360px, 0.9fr);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    padding: 22px clamp(20px, 4vw, 44px);
+    gap: 16px clamp(22px, 4vw, 42px);
+  }
+
+  .live-screen .point-actions {
+    margin: 0;
+    padding: 0;
+    align-self: end;
+    grid-template-columns: repeat(5, minmax(64px, 1fr));
+  }
+}
+
+@media (max-height: 460px) and (orientation: landscape) {
+  .live-screen {
+    padding-block: 12px;
+    gap: 10px 22px;
+  }
+
+  .live-screen .match-action {
+    min-height: 66px;
+    gap: 6px;
+  }
+
+  .live-screen .action-icon {
+    width: 42px;
+    height: 42px;
   }
 }
