@@ -87,6 +87,14 @@ export async function signInWithEmail(email: string, password: string): Promise<
   return mapFirebaseUser(credential.user);
 }
 
+export async function sendPasswordReset(email: string) {
+  const auth = await getFirebaseAuth();
+  if (!auth) return;
+
+  const { sendPasswordResetEmail } = await import("firebase/auth");
+  await sendPasswordResetEmail(auth, email);
+}
+
 export async function signOutAppUser() {
   const auth = await getFirebaseAuth();
   if (!auth) return;

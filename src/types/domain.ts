@@ -7,6 +7,7 @@ export type PlayerProfile = {
   name: string;
   shortName: string;
   avatar: string;
+  photoDataUrl?: string;
   portrait: string;
   location?: string;
   rating: string;
@@ -19,6 +20,7 @@ export type UserProfile = {
   name: string;
   shortName: string;
   avatar: string;
+  photoDataUrl?: string;
   portrait: string;
   location: string;
   rating: string;

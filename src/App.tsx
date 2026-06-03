@@ -6,9 +6,11 @@ import {
   Bell,
   Bookmark,
   Calendar,
+  Camera,
   ChevronRight,
   CircleUserRound,
   Clock3,
+  Download,
   Dumbbell,
   Flame,
   Gauge,
@@ -41,6 +43,7 @@ import {
   createEmailAccount,
   getCurrentAppUser,
   getSignedInAppUser,
+  sendPasswordReset,
   signInWithEmail,
   signOutAppUser,
   type AppUser
@@ -180,6 +183,11 @@ export default function App() {
     showMessage("Account created");
   }
 
+  async function resetPassword(email: string) {
+    await sendPasswordReset(email);
+    showMessage("Password reset email sent");
+  }
+
   async function continueAnonymously() {
     setAccountStatus("Starting guest session...");
     const appUser = await getCurrentAppUser();
@@ -224,6 +232,7 @@ export default function App() {
             onAnonymous={continueAnonymously}
             onCreate={createAccount}
             onNavigate={setScreen}
+            onResetPassword={resetPassword}
             onSignIn={signInAccount}
             onSignOut={signOutAccount}
           />
@@ -299,6 +308,7 @@ export default function App() {
             onAnonymous={continueAnonymously}
             onCreate={createAccount}
             onNavigate={setScreen}
+            onResetPassword={resetPassword}
             onSignIn={signInAccount}
             onSignOut={signOutAccount}
           />
@@ -344,7 +354,7 @@ function HomeScreen({
         </div>
         <div className="recent-match-grid">
           <div className="mini-player">
-            <Portrait className={profile.portrait} initials={profile.avatar} />
+            <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
             <div><strong>{profile.name}</strong><span>{profile.rating}</span></div>
           </div>
           <div className="mini-score">
@@ -419,7 +429,7 @@ function LiveMatchScreen({
       </div>
 
       <div className="score-card">
-        <PlayerScore name={profile.name} meta={profile.rating} avatar={profile.avatar} portrait={profile.portrait} score={pointDisplay[0]} />
+        <PlayerScore name={profile.name} meta={profile.rating} avatar={profile.avatar} photoDataUrl={profile.photoDataUrl} portrait={profile.portrait} score={pointDisplay[0]} />
         <div className="divider">vs</div>
         <PlayerScore name={opponent.name} meta={opponent.rating} avatar={opponent.avatar} portrait={opponent.portrait} score={pointDisplay[1]} />
       </div>
@@ -487,7 +497,7 @@ function CompleteScreen({
       </div>
 
       <div className="complete-score">
-        <PlayerScore name={profile.name} meta={profile.rating} avatar={profile.avatar} portrait={profile.portrait} score="6" />
+        <PlayerScore name={profile.name} meta={profile.rating} avatar={profile.avatar} photoDataUrl={profile.photoDataUrl} portrait={profile.portrait} score="6" />
         <div className="divider">vs</div>
         <PlayerScore name={opponent.name} meta={opponent.rating} avatar={opponent.avatar} portrait={opponent.portrait} score="3" />
       </div>
@@ -550,6 +560,14 @@ function HighlightsScreen({
   onAction: (message: string) => void;
   onFilter: (filter: string) => void;
 }) {
+  const [shareCard, setShareCard] = useState("");
+
+  function generateShareCard() {
+    const card = createShareCardSvg(profile);
+    setShareCard(card);
+    onAction("Share card generated");
+  }
+
   return (
     <section className="screen content highlights-screen">
       <header className="simple-header">
@@ -563,12 +581,25 @@ function HighlightsScreen({
           <p>Share your win. Inspire your game.</p>
         </div>
         <div className="share-preview">
-          <Portrait className={profile.portrait} initials={profile.avatar} />
+          <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
           <span>vs</span>
           <Portrait className={opponent.portrait} initials={opponent.avatar} />
         </div>
-        <button onClick={() => onAction("Share card generated")}>Generate Share Card <ArrowRight size={17} /></button>
+        <button onClick={generateShareCard}>Generate Share Card <ArrowRight size={17} /></button>
       </article>
+      {shareCard && (
+        <article className="generated-share-card">
+          <div className="section-row">
+            <h2>Share card ready</h2>
+            <button className="text-button" onClick={() => setShareCard("")}>Close</button>
+          </div>
+          <img alt="Generated AceTrack match share card" src={shareCard} />
+          <div className="button-pair">
+            <a className="ghost-button" download="acetrack-share-card.svg" href={shareCard}><Download size={18} /> Download</a>
+            <button className="hero-action compact" onClick={() => copyShareCardLink(shareCard, onAction)}><Share2 size={18} /> Copy Card</button>
+          </div>
+        </article>
+      )}
       <div className="section-row">
         <h2>Highlights</h2>
         <button className="text-button" onClick={() => onAction("Select mode enabled")}>Select</button>
@@ -690,6 +721,18 @@ function ProfileScreen({
     setDraft((current) => ({ ...current, equipment: { ...current.equipment, [field]: value } }));
   }
 
+  function updatePhoto(file?: File) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        const photoDataUrl = reader.result;
+        setDraft((current) => ({ ...current, photoDataUrl }));
+      }
+    });
+    reader.readAsDataURL(file);
+  }
+
   async function saveProfile() {
     const nextProfile = {
       ...draft,
@@ -707,7 +750,7 @@ function ProfileScreen({
   return (
     <section className="screen content profile-screen">
       <div className="profile-hero">
-        <Portrait className={`${profile.portrait} large`} initials={profile.avatar} />
+        <Portrait className={`${profile.portrait} large`} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
         <div>
           <h1>{profile.name}</h1>
           <p><MapPin size={17} /> {profile.location}</p>
@@ -723,6 +766,14 @@ function ProfileScreen({
             <button className="text-button" disabled={isSaving} onClick={saveProfile}>{isSaving ? "Saving..." : "Save"}</button>
           </div>
           <div className="edit-grid">
+            <label className="photo-field">
+              <span>Profile picture</span>
+              <div>
+                <Portrait className={`${draft.portrait} large`} initials={draft.avatar} photoDataUrl={draft.photoDataUrl} />
+                <input accept="image/*" type="file" onChange={(event) => updatePhoto(event.target.files?.[0])} />
+                <button className="ghost-button" type="button" onClick={() => setDraft((current) => ({ ...current, photoDataUrl: undefined }))}><Camera size={17} /> Clear photo</button>
+              </div>
+            </label>
             <label>
               <span>Name</span>
               <input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} />
@@ -848,6 +899,7 @@ function AccountScreen({
   onAnonymous,
   onCreate,
   onNavigate,
+  onResetPassword,
   onSignIn,
   onSignOut
 }: {
@@ -857,6 +909,7 @@ function AccountScreen({
   onAnonymous: () => Promise<void>;
   onCreate: (email: string, password: string) => Promise<void>;
   onNavigate: (screen: Screen) => void;
+  onResetPassword: (email: string) => Promise<void>;
   onSignIn: (email: string, password: string) => Promise<void>;
   onSignOut: () => Promise<void>;
 }) {
@@ -879,6 +932,21 @@ function AccountScreen({
       if (action === "sign-in") await onSignIn(email, password);
       else await onCreate(email, password);
       setFormStatus("Account ready.");
+    } catch (error) {
+      setFormStatus(getAuthErrorMessage(error));
+    }
+  }
+
+  async function runPasswordReset() {
+    if (!email) {
+      setFormStatus("Enter your email first.");
+      return;
+    }
+
+    try {
+      setFormStatus("Sending reset email...");
+      await onResetPassword(email);
+      setFormStatus("Password reset email sent.");
     } catch (error) {
       setFormStatus(getAuthErrorMessage(error));
     }
@@ -912,6 +980,7 @@ function AccountScreen({
         <div className="account-actions">
           <button className="hero-action compact" onClick={() => runAuth("sign-in")}><LogIn size={18} /> Sign in</button>
           <button className="ghost-button" onClick={() => runAuth("create")}>{createLabel}</button>
+          <button className="ghost-button" onClick={runPasswordReset}>Forgot password</button>
           <button className="ghost-button" onClick={onAnonymous}>Continue as guest</button>
           {!isEntry && <button className="ghost-button quiet" onClick={onSignOut}><LogOut size={18} /> Sign out</button>}
         </div>
@@ -947,18 +1016,20 @@ function PlayerScore({
   name,
   meta,
   avatar,
+  photoDataUrl,
   portrait,
   score
 }: {
   name: string;
   meta: string;
   avatar: string;
+  photoDataUrl?: string;
   portrait: string;
   score: string;
 }) {
   return (
     <div className="player-score">
-      <Portrait className={portrait} initials={avatar} />
+      <Portrait className={portrait} initials={avatar} photoDataUrl={photoDataUrl} />
       <div>
         <h2>{name}</h2>
         <p>{meta}</p>
@@ -1049,12 +1120,90 @@ function getShortName(name: string) {
   return last ? `${first[0]}. ${last}` : first;
 }
 
+function createShareCardSvg(profile: UserProfile) {
+  const safeName = escapeSvg(profile.name);
+  const safeOpponent = escapeSvg(opponent.name);
+  const safeRating = escapeSvg(profile.rating);
+  const safeInitials = escapeSvg(profile.avatar);
+  const safeOpponentInitials = escapeSvg(opponent.avatar);
+  const safeLocation = escapeSvg(profile.location);
+
+  const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fffef8"/>
+      <stop offset="62%" stop-color="#f5fad8"/>
+      <stop offset="100%" stop-color="#eef8c7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28" stdDeviation="28" flood-color="#465337" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <rect width="1080" height="1350" rx="72" fill="url(#bg)"/>
+  <path d="M94 960 C330 840 620 820 996 900" stroke="#9fc63a" stroke-opacity="0.28" stroke-width="3" fill="none"/>
+  <path d="M104 1030 L910 820 M168 1110 L980 920 M250 1188 L1030 1006" stroke="#9fc63a" stroke-opacity="0.18" stroke-width="2"/>
+  <text x="92" y="126" fill="#9fc63a" font-family="Inter, Arial" font-size="34" font-weight="800" letter-spacing="8">ACETRACK</text>
+  <text x="92" y="218" fill="#161b16" font-family="Inter, Arial" font-size="78" font-weight="900">Match Card</text>
+  <text x="92" y="282" fill="#697365" font-family="Inter, Arial" font-size="34">${safeLocation}</text>
+  <g filter="url(#shadow)">
+    <rect x="92" y="380" width="896" height="472" rx="44" fill="rgba(255,255,255,0.84)"/>
+    <circle cx="310" cy="542" r="92" fill="#eef8c7"/>
+    <text x="310" y="564" fill="#536b16" text-anchor="middle" font-family="Inter, Arial" font-size="48" font-weight="900">${safeInitials}</text>
+    <circle cx="770" cy="542" r="92" fill="#f1f3ea"/>
+    <text x="770" y="564" fill="#697365" text-anchor="middle" font-family="Inter, Arial" font-size="48" font-weight="900">${safeOpponentInitials}</text>
+    <circle cx="540" cy="548" r="44" fill="#fbfde9"/>
+    <text x="540" y="562" fill="#161b16" text-anchor="middle" font-family="Inter, Arial" font-size="28" font-weight="900">VS</text>
+    <text x="310" y="700" fill="#161b16" text-anchor="middle" font-family="Inter, Arial" font-size="42" font-weight="900">${safeName}</text>
+    <text x="310" y="752" fill="#697365" text-anchor="middle" font-family="Inter, Arial" font-size="28">${safeRating}</text>
+    <text x="770" y="700" fill="#161b16" text-anchor="middle" font-family="Inter, Arial" font-size="42" font-weight="900">${safeOpponent}</text>
+    <text x="770" y="752" fill="#697365" text-anchor="middle" font-family="Inter, Arial" font-size="28">${escapeSvg(opponent.rating)}</text>
+  </g>
+  <text x="92" y="990" fill="#697365" font-family="Inter, Arial" font-size="30" font-weight="800">FINAL SCORE</text>
+  <text x="92" y="1080" fill="#161b16" font-family="Inter, Arial" font-size="92" font-weight="900">6 - 3</text>
+  <rect x="676" y="996" width="236" height="72" rx="36" fill="#cdea5f"/>
+  <text x="794" y="1044" fill="#1e2b11" text-anchor="middle" font-family="Inter, Arial" font-size="30" font-weight="900">WINNER</text>
+  <text x="92" y="1240" fill="#697365" font-family="Inter, Arial" font-size="28">Generated by AceTrack</text>
+</svg>`;
+
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+async function copyShareCardLink(card: string, onAction: (message: string) => void) {
+  try {
+    await navigator.clipboard.writeText(card);
+    onAction("Share card copied");
+  } catch {
+    onAction("Download the share card instead");
+  }
+}
+
+function escapeSvg(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 function CourtLines() {
   return <div className="court-lines" aria-hidden="true"><span /><span /><span /></div>;
 }
 
-function Portrait({ initials, className = "" }: { initials: string; className?: string }) {
-  return <div className={`portrait ${className}`}><span>{initials}</span></div>;
+function Portrait({
+  initials,
+  className = "",
+  photoDataUrl
+}: {
+  initials: string;
+  className?: string;
+  photoDataUrl?: string;
+}) {
+  return (
+    <div className={`portrait ${className}`}>
+      {photoDataUrl ? <img alt="" src={photoDataUrl} /> : <span>{initials}</span>}
+    </div>
+  );
 }
 
 function TennisBall() {
