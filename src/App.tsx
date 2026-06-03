@@ -70,6 +70,7 @@ export default function App() {
   const [appMessage, setAppMessage] = useState("");
   const [accountStatus, setAccountStatus] = useState("Checking account...");
   const [authPhase, setAuthPhase] = useState<AuthPhase>("loading");
+  const [appUser, setAppUser] = useState<AppUser | undefined>();
 
   const pointDisplay = getPointDisplay(match);
   const sets = getCompletedSets(match);
@@ -94,9 +95,11 @@ export default function App() {
         if (!isMounted) return;
         window.clearTimeout(loadingTimeout);
         if (appUser) {
+          setAppUser(appUser);
           setAccountStatus(formatAccountStatus(appUser));
           setAuthPhase("signed-in");
         } else {
+          setAppUser(undefined);
           setAccountStatus("Not signed in");
           setAuthPhase("signed-out");
         }
@@ -104,6 +107,7 @@ export default function App() {
       .catch(() => {
         if (!isMounted) return;
         window.clearTimeout(loadingTimeout);
+        setAppUser(undefined);
         setAccountStatus("Account unavailable");
         setAuthPhase("signed-out");
       });
@@ -128,6 +132,7 @@ export default function App() {
   async function saveCurrentMatch() {
     setSaveStatus("Saving...");
     const appUser = await getCurrentAppUser();
+    setAppUser(appUser);
     setAccountStatus(formatAccountStatus(appUser));
     const result = await saveMatchRecord(createMatchRecord(match, appUser.id));
     setSaveStatus(result.mode === "firebase" ? "Saved to Firebase" : "Saved locally");
@@ -136,6 +141,7 @@ export default function App() {
   async function signInAccount(email: string, password: string) {
     setAccountStatus("Signing in...");
     const appUser = await signInWithEmail(email, password);
+    setAppUser(appUser);
     setAccountStatus(formatAccountStatus(appUser));
     setAuthPhase("signed-in");
     setScreen("home");
@@ -145,6 +151,7 @@ export default function App() {
   async function createAccount(email: string, password: string) {
     setAccountStatus("Creating account...");
     const appUser = await createEmailAccount(email, password);
+    setAppUser(appUser);
     setAccountStatus(formatAccountStatus(appUser));
     setAuthPhase("signed-in");
     setScreen("home");
@@ -154,6 +161,7 @@ export default function App() {
   async function continueAnonymously() {
     setAccountStatus("Starting guest session...");
     const appUser = await getCurrentAppUser();
+    setAppUser(appUser);
     setAccountStatus(formatAccountStatus(appUser));
     setAuthPhase("signed-in");
     setScreen("home");
@@ -162,6 +170,7 @@ export default function App() {
 
   async function signOutAccount() {
     await signOutAppUser();
+    setAppUser(undefined);
     setAccountStatus("Signed out");
     setAuthPhase("signed-out");
     setScreen("home");
@@ -186,6 +195,7 @@ export default function App() {
           <CourtLines />
           <AccountScreen
             accountStatus={accountStatus}
+            appUser={appUser}
             isEntry
             onAnonymous={continueAnonymously}
             onCreate={createAccount}
@@ -213,6 +223,8 @@ export default function App() {
             onPoint={addPoint}
             onUndo={() => setMatch(undoPoint(match))}
             onComplete={() => setScreen("complete")}
+            onEndMatch={() => setScreen("complete")}
+            onExit={() => setScreen("home")}
           />
         )}
         {screen === "complete" && (
@@ -241,6 +253,7 @@ export default function App() {
         {screen === "account" && (
           <AccountScreen
             accountStatus={accountStatus}
+            appUser={appUser}
             onAnonymous={continueAnonymously}
             onCreate={createAccount}
             onNavigate={setScreen}
@@ -325,7 +338,9 @@ function LiveMatchScreen({
   onAction,
   onPoint,
   onUndo,
-  onComplete
+  onComplete,
+  onEndMatch,
+  onExit
 }: {
   pointDisplay: [string, string];
   sets: ReturnType<typeof getCompletedSets>;
@@ -334,6 +349,8 @@ function LiveMatchScreen({
   onPoint: (player: 0 | 1) => void;
   onUndo: () => void;
   onComplete: () => void;
+  onEndMatch: () => void;
+  onExit: () => void;
 }) {
   return (
     <section className="screen content live-screen">
@@ -342,7 +359,11 @@ function LiveMatchScreen({
           <p><span className="status-dot" /> Live</p>
           <strong>Singles Match</strong>
         </div>
-        <span><Apple size={16} /> Watch Connected</span>
+        <div className="live-top-actions">
+          <span><Apple size={16} /> Watch Connected</span>
+          <button onClick={onExit}>Exit</button>
+          <button className="danger" onClick={onEndMatch}>End Match</button>
+        </div>
       </div>
 
       <div className="score-card">
@@ -672,6 +693,7 @@ function ProfileScreen({
 
 function AccountScreen({
   accountStatus,
+  appUser,
   isEntry = false,
   onAnonymous,
   onCreate,
@@ -680,6 +702,7 @@ function AccountScreen({
   onSignOut
 }: {
   accountStatus: string;
+  appUser?: AppUser;
   isEntry?: boolean;
   onAnonymous: () => Promise<void>;
   onCreate: (email: string, password: string) => Promise<void>;
@@ -690,6 +713,10 @@ function AccountScreen({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [formStatus, setFormStatus] = useState("");
+  const isGuest = appUser?.mode === "firebase" && appUser.isAnonymous;
+  const isRegistered = Boolean(appUser?.email);
+  const createLabel = isGuest ? "Upgrade guest account" : "Create account";
+  const statusLabel = isRegistered ? appUser?.email : accountStatus;
 
   async function runAuth(action: "sign-in" | "create") {
     if (!email || password.length < 6) {
@@ -713,10 +740,17 @@ function AccountScreen({
         {isEntry && <AceTrackWordmark />}
         <p className="eyebrow">{isEntry ? "Welcome" : "AceTrack account"}</p>
         <h1>{isEntry ? "Log in to start tracking." : "Save every match."}</h1>
-        <p>{isEntry ? "Create your profile, save matches, and keep every point synced." : accountStatus}</p>
+        <p>{isEntry ? "Create your profile, save matches, and keep every point synced." : "Manage your login, guest mode, and saved match identity."}</p>
       </header>
 
       <article className="login-card">
+        {!isEntry && (
+          <div className="account-summary">
+            <span>{isRegistered ? "Registered account" : isGuest ? "Guest account" : "Signed out"}</span>
+            <strong>{statusLabel}</strong>
+            <p>{isGuest ? "Add an email and password to keep this guest profile." : isRegistered ? "Your matches are tied to this login." : "Sign in or create an account to sync matches."}</p>
+          </div>
+        )}
         <label>
           <span><Mail size={17} /> Email</span>
           <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" type="email" />
@@ -727,9 +761,9 @@ function AccountScreen({
         </label>
         <div className="account-actions">
           <button className="hero-action compact" onClick={() => runAuth("sign-in")}><LogIn size={18} /> Sign in</button>
-          <button className="ghost-button" onClick={() => runAuth("create")}>Create account</button>
+          <button className="ghost-button" onClick={() => runAuth("create")}>{createLabel}</button>
           <button className="ghost-button" onClick={onAnonymous}>Continue as guest</button>
-          <button className="ghost-button quiet" onClick={onSignOut}><LogOut size={18} /> Sign out</button>
+          {!isEntry && <button className="ghost-button quiet" onClick={onSignOut}><LogOut size={18} /> Sign out</button>}
         </div>
         <p className="save-status">{formStatus}</p>
       </article>
@@ -823,6 +857,7 @@ function BottomNav({ active, onNavigate }: { active: Screen; onNavigate: (screen
 
 function formatAccountStatus(appUser: AppUser) {
   if (appUser.mode === "local") return "Local guest account";
+  if (appUser.email) return appUser.email;
   return appUser.isAnonymous ? "Firebase guest account" : "Firebase account";
 }
 

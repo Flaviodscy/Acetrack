@@ -3737,6 +3737,93 @@ h1,
   }
 }
 
+/* Account management and live match escape controls. */
+.live-top-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.live-top-actions span,
+.live-top-actions button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.66);
+  color: #4f594a;
+  font-size: 0.78rem;
+  font-weight: 850;
+  box-shadow: inset 0 0 0 1px rgba(38, 54, 31, 0.07);
+}
+
+.live-top-actions button.danger {
+  background: #1c2518;
+  color: white;
+  box-shadow: 0 12px 24px rgba(28, 37, 24, 0.16);
+}
+
+.account-summary {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f4fad8, #fffefa);
+  box-shadow: inset 0 0 0 1px rgba(38, 54, 31, 0.06);
+}
+
+.account-summary span {
+  color: var(--accent-strong);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.account-summary strong {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.account-summary p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+@media (max-width: 420px) {
+  .live-top-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .live-top-actions span {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .live-top-actions button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}
+
+@media (orientation: landscape) {
+  .live-screen .match-status {
+    align-items: center;
+  }
+
+  .live-top-actions span {
+    display: none;
+  }
+}
+
 /* Auth entry and branded loading screen. */
 .auth-frame {
   background:

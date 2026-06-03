@@ -5,10 +5,15 @@ const LOCAL_USER_KEY = "acetrack:local-user-id";
 const AUTH_STATE_TIMEOUT_MS = 1600;
 
 export type AppUser = {
+  email?: string | null;
   id: string;
   isAnonymous: boolean;
   mode: "firebase" | "local";
 };
+
+function mapFirebaseUser(user: User): AppUser {
+  return { email: user.email, id: user.uid, isAnonymous: user.isAnonymous, mode: "firebase" };
+}
 
 export async function getSignedInAppUser(): Promise<AppUser | undefined> {
   if (!isFirebaseConfigured()) return undefined;
@@ -16,7 +21,7 @@ export async function getSignedInAppUser(): Promise<AppUser | undefined> {
   const auth = await getFirebaseAuth();
   if (!auth) return undefined;
   if (auth.currentUser) {
-    return { id: auth.currentUser.uid, isAnonymous: auth.currentUser.isAnonymous, mode: "firebase" };
+    return mapFirebaseUser(auth.currentUser);
   }
 
   const { onAuthStateChanged } = await import("firebase/auth");
@@ -29,7 +34,7 @@ export async function getSignedInAppUser(): Promise<AppUser | undefined> {
       isResolved = true;
       if (timeoutId) window.clearTimeout(timeoutId);
       unsubscribe();
-      resolve(user ? { id: user.uid, isAnonymous: user.isAnonymous, mode: "firebase" } : undefined);
+      resolve(user ? mapFirebaseUser(user) : undefined);
     };
 
     unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -48,13 +53,13 @@ export async function getCurrentAppUser(): Promise<AppUser> {
   if (!auth) return getLocalUser();
 
   if (auth.currentUser) {
-    return { id: auth.currentUser.uid, isAnonymous: auth.currentUser.isAnonymous, mode: "firebase" };
+    return mapFirebaseUser(auth.currentUser);
   }
 
   try {
     const { signInAnonymously } = await import("firebase/auth");
     const credential = await signInAnonymously(auth);
-    return { id: credential.user.uid, isAnonymous: credential.user.isAnonymous, mode: "firebase" };
+    return mapFirebaseUser(credential.user);
   } catch (error) {
     console.warn("Firebase auth failed, falling back to local user.", error);
     return getLocalUser();
@@ -70,7 +75,7 @@ export async function createEmailAccount(email: string, password: string): Promi
   const credential = auth.currentUser?.isAnonymous
     ? await linkWithCredential(auth.currentUser, emailCredential)
     : await createUserWithEmailAndPassword(auth, email, password);
-  return { id: credential.user.uid, isAnonymous: credential.user.isAnonymous, mode: "firebase" };
+  return mapFirebaseUser(credential.user);
 }
 
 export async function signInWithEmail(email: string, password: string): Promise<AppUser> {
@@ -79,7 +84,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
 
   const { signInWithEmailAndPassword } = await import("firebase/auth");
   const credential = await signInWithEmailAndPassword(auth, email, password);
-  return { id: credential.user.uid, isAnonymous: credential.user.isAnonymous, mode: "firebase" };
+  return mapFirebaseUser(credential.user);
 }
 
 export async function signOutAppUser() {
