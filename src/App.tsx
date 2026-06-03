@@ -52,6 +52,7 @@ import "./styles.css";
 
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account";
 type AuthPhase = "loading" | "signed-out" | "signed-in";
+type UserProfile = typeof user;
 
 const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
   { screen: "home", label: "Play", icon: Home },
@@ -63,6 +64,7 @@ const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
 
 export default function App() {
   const [screen, setScreen] = usePersistentState<Screen>("acetrack:screen", "home");
+  const [profile, setProfile] = usePersistentState<UserProfile>("acetrack:profile", user);
   const [match, setMatch] = usePersistentState("acetrack:live-match", createMatch([user.name, opponent.name]));
   const [activeFilter, setActiveFilter] = usePersistentState("acetrack:highlight-filter", "All");
   const [socialTab, setSocialTab] = usePersistentState("acetrack:social-tab", "Nearby");
@@ -74,7 +76,7 @@ export default function App() {
 
   const pointDisplay = getPointDisplay(match);
   const sets = getCompletedSets(match);
-  const winnerName = match.winner !== undefined ? match.players[match.winner] : user.name;
+  const winnerName = match.winner !== undefined ? (match.winner === 0 ? profile.name : opponent.name) : profile.name;
   const finalScore = getFinalScore(match) || "6-4, 6-3";
 
   const visibleHighlights = useMemo(() => {
@@ -213,11 +215,12 @@ export default function App() {
     <main className="app-shell">
       <div className={`phone-frame ${screen === "live" ? "is-live" : ""}`}>
         <CourtLines />
-        {screen === "home" && <HomeScreen onAction={showMessage} onNavigate={setScreen} />}
+        {screen === "home" && <HomeScreen profile={profile} onAction={showMessage} onNavigate={setScreen} />}
         {screen === "live" && (
           <LiveMatchScreen
             matchWinner={match.winner}
             pointDisplay={pointDisplay}
+            profile={profile}
             sets={sets}
             onAction={showMessage}
             onPoint={addPoint}
@@ -231,6 +234,7 @@ export default function App() {
           <CompleteScreen
             backendMode={getBackendMode()}
             finalScore={finalScore}
+            profile={profile}
             saveStatus={saveStatus}
             sets={sets}
             winnerName={winnerName}
@@ -242,13 +246,23 @@ export default function App() {
           <HighlightsScreen
             activeFilter={activeFilter}
             highlights={visibleHighlights}
+            profile={profile}
             onAction={showMessage}
             onFilter={setActiveFilter}
           />
         )}
         {screen === "social" && <SocialScreen activeTab={socialTab} onAction={showMessage} onTab={setSocialTab} />}
         {screen === "profile" && (
-          <ProfileScreen accountStatus={accountStatus} onAction={showMessage} onNavigate={setScreen} />
+          <ProfileScreen
+            accountStatus={accountStatus}
+            profile={profile}
+            onAction={showMessage}
+            onNavigate={setScreen}
+            onSaveProfile={(nextProfile) => {
+              setProfile(nextProfile);
+              showMessage("Profile updated");
+            }}
+          />
         )}
         {screen === "account" && (
           <AccountScreen
@@ -268,7 +282,15 @@ export default function App() {
   );
 }
 
-function HomeScreen({ onAction, onNavigate }: { onAction: (message: string) => void; onNavigate: (screen: Screen) => void }) {
+function HomeScreen({
+  profile,
+  onAction,
+  onNavigate
+}: {
+  profile: UserProfile;
+  onAction: (message: string) => void;
+  onNavigate: (screen: Screen) => void;
+}) {
   return (
     <section className="screen content home-screen">
       <header className="topbar">
@@ -294,8 +316,8 @@ function HomeScreen({ onAction, onNavigate }: { onAction: (message: string) => v
         </div>
         <div className="recent-match-grid">
           <div className="mini-player">
-            <Portrait className={user.portrait} initials={user.avatar} />
-            <div><strong>{user.name}</strong><span>{user.rating}</span></div>
+            <Portrait className={profile.portrait} initials={profile.avatar} />
+            <div><strong>{profile.name}</strong><span>{profile.rating}</span></div>
           </div>
           <div className="mini-score">
             <span>SET</span><b>1</b><b>2</b><b>3</b>
@@ -333,6 +355,7 @@ function SplashScreen() {
 
 function LiveMatchScreen({
   pointDisplay,
+  profile,
   sets,
   matchWinner,
   onAction,
@@ -343,6 +366,7 @@ function LiveMatchScreen({
   onExit
 }: {
   pointDisplay: [string, string];
+  profile: UserProfile;
   sets: ReturnType<typeof getCompletedSets>;
   matchWinner?: 0 | 1;
   onAction: (message: string) => void;
@@ -367,12 +391,12 @@ function LiveMatchScreen({
       </div>
 
       <div className="score-card">
-        <PlayerScore name={user.name} meta={user.rating} avatar={user.avatar} portrait={user.portrait} score={pointDisplay[0]} />
+        <PlayerScore name={profile.name} meta={profile.rating} avatar={profile.avatar} portrait={profile.portrait} score={pointDisplay[0]} />
         <div className="divider">vs</div>
         <PlayerScore name={opponent.name} meta={opponent.rating} avatar={opponent.avatar} portrait={opponent.portrait} score={pointDisplay[1]} />
       </div>
 
-      <SetTable sets={sets} full />
+      <SetTable profile={profile} sets={sets} full />
 
       <div className="timer-row">
         <span>Match time</span>
@@ -411,6 +435,7 @@ function CompleteScreen({
   backendMode,
   winnerName,
   finalScore,
+  profile,
   sets,
   saveStatus,
   onNavigate,
@@ -419,6 +444,7 @@ function CompleteScreen({
   backendMode: "local" | "firebase";
   winnerName: string;
   finalScore: string;
+  profile: UserProfile;
   sets: ReturnType<typeof getCompletedSets>;
   saveStatus: string;
   onNavigate: (screen: Screen) => void;
@@ -433,12 +459,12 @@ function CompleteScreen({
       </div>
 
       <div className="complete-score">
-        <PlayerScore name={user.name} meta={user.rating} avatar={user.avatar} portrait={user.portrait} score="6" />
+        <PlayerScore name={profile.name} meta={profile.rating} avatar={profile.avatar} portrait={profile.portrait} score="6" />
         <div className="divider">vs</div>
         <PlayerScore name={opponent.name} meta={opponent.rating} avatar={opponent.avatar} portrait={opponent.portrait} score="3" />
       </div>
 
-      <SetTable sets={sets} full title="Set by set" />
+      <SetTable profile={profile} sets={sets} full title="Set by set" />
 
       <div className="match-stats">
         <div className="section-row">
@@ -486,11 +512,13 @@ function CompleteScreen({
 function HighlightsScreen({
   activeFilter,
   highlights,
+  profile,
   onAction,
   onFilter
 }: {
   activeFilter: string;
   highlights: typeof import("./data/mockData").highlights;
+  profile: UserProfile;
   onAction: (message: string) => void;
   onFilter: (filter: string) => void;
 }) {
@@ -507,7 +535,7 @@ function HighlightsScreen({
           <p>Share your win. Inspire your game.</p>
         </div>
         <div className="share-preview">
-          <Portrait className={user.portrait} initials={user.avatar} />
+          <Portrait className={profile.portrait} initials={profile.avatar} />
           <span>vs</span>
           <Portrait className={opponent.portrait} initials={opponent.avatar} />
         </div>
@@ -605,24 +633,112 @@ function SocialScreen({
 
 function ProfileScreen({
   accountStatus,
+  profile,
   onAction,
-  onNavigate
+  onNavigate,
+  onSaveProfile
 }: {
   accountStatus: string;
+  profile: UserProfile;
   onAction: (message: string) => void;
   onNavigate: (screen: Screen) => void;
+  onSaveProfile: (profile: UserProfile) => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState<UserProfile>(profile);
+
+  useEffect(() => {
+    setDraft(profile);
+  }, [profile]);
+
+  function updateDraft(field: keyof UserProfile, value: string | number) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateEquipment(field: keyof UserProfile["equipment"], value: string) {
+    setDraft((current) => ({ ...current, equipment: { ...current.equipment, [field]: value } }));
+  }
+
+  function saveProfile() {
+    const nextProfile = {
+      ...draft,
+      avatar: getInitials(draft.name),
+      shortName: getShortName(draft.name),
+      xp: Math.max(0, Math.min(100, Number(draft.xp) || 0)),
+      level: Math.max(1, Number(draft.level) || 1)
+    };
+    onSaveProfile(nextProfile);
+    setIsEditing(false);
+  }
+
   return (
     <section className="screen content profile-screen">
       <div className="profile-hero">
-        <Portrait className={`${user.portrait} large`} initials={user.avatar} />
+        <Portrait className={`${profile.portrait} large`} initials={profile.avatar} />
         <div>
-          <h1>{user.name}</h1>
-          <p><MapPin size={17} /> {user.location}</p>
-          <span className="rating-pill">{user.rating}</span>
+          <h1>{profile.name}</h1>
+          <p><MapPin size={17} /> {profile.location}</p>
+          <span className="rating-pill">{profile.rating}</span>
         </div>
-        <button className="account-button" onClick={() => onNavigate("account")}><LogIn size={18} /> Account</button>
+        <button className="account-button" onClick={() => setIsEditing((editing) => !editing)}>{isEditing ? "Close" : "Edit"}</button>
       </div>
+
+      {isEditing && (
+        <article className="edit-profile-card">
+          <div className="section-row">
+            <h2>Edit profile</h2>
+            <button className="text-button" onClick={saveProfile}>Save</button>
+          </div>
+          <div className="edit-grid">
+            <label>
+              <span>Name</span>
+              <input value={draft.name} onChange={(event) => updateDraft("name", event.target.value)} />
+            </label>
+            <label>
+              <span>Location</span>
+              <input value={draft.location} onChange={(event) => updateDraft("location", event.target.value)} />
+            </label>
+            <label>
+              <span>Rating</span>
+              <select value={draft.rating} onChange={(event) => updateDraft("rating", event.target.value)}>
+                {["NTRP 2.5", "NTRP 3.0", "NTRP 3.5", "NTRP 4.0", "NTRP 4.5", "NTRP 5.0"].map((rating) => <option key={rating}>{rating}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Level</span>
+              <input min="1" max="99" type="number" value={draft.level} onChange={(event) => updateDraft("level", Number(event.target.value))} />
+            </label>
+            <label>
+              <span>XP progress</span>
+              <input min="0" max="100" type="number" value={draft.xp} onChange={(event) => updateDraft("xp", Number(event.target.value))} />
+            </label>
+            <label>
+              <span>XP text</span>
+              <input value={draft.xpText} onChange={(event) => updateDraft("xpText", event.target.value)} />
+            </label>
+            <label>
+              <span>Racket</span>
+              <input value={draft.equipment.racket} onChange={(event) => updateEquipment("racket", event.target.value)} />
+            </label>
+            <label>
+              <span>Strings</span>
+              <input value={draft.equipment.strings} onChange={(event) => updateEquipment("strings", event.target.value)} />
+            </label>
+            <label>
+              <span>Tension</span>
+              <input value={draft.equipment.tension} onChange={(event) => updateEquipment("tension", event.target.value)} />
+            </label>
+            <label>
+              <span>Grip</span>
+              <input value={draft.equipment.grip} onChange={(event) => updateEquipment("grip", event.target.value)} />
+            </label>
+          </div>
+          <div className="button-pair">
+            <button className="hero-action compact" onClick={saveProfile}>Save changes</button>
+            <button className="ghost-button" onClick={() => { setDraft(profile); setIsEditing(false); }}>Cancel</button>
+          </div>
+        </article>
+      )}
 
       <article className="account-card">
         <div>
@@ -633,10 +749,10 @@ function ProfileScreen({
       </article>
 
       <div className="level-row">
-        <div><span>Level</span><strong>{user.level}</strong></div>
+        <div><span>Level</span><strong>{profile.level}</strong></div>
         <div>
-          <p>{user.xpText}</p>
-          <div className="xp-track"><span style={{ width: `${user.xp}%` }} /></div>
+          <p>{profile.xpText}</p>
+          <div className="xp-track"><span style={{ width: `${profile.xp}%` }} /></div>
         </div>
       </div>
 
@@ -646,7 +762,7 @@ function ProfileScreen({
           <button className="text-button" onClick={() => onAction("Full skills view coming next")}>View all</button>
         </div>
         <div className="skill-list">
-          {user.skills.map(([skill, value]) => (
+          {profile.skills.map(([skill, value]) => (
             <div className="skill" key={skill}>
               <Dumbbell size={20} />
               <span>{skill}</span>
@@ -660,11 +776,11 @@ function ProfileScreen({
       <article className="flat-section">
         <div className="section-row">
           <h2>Equipment</h2>
-          <button className="text-button" onClick={() => onAction("Equipment editor coming next")}>View all</button>
+          <button className="text-button" onClick={() => setIsEditing(true)}>Edit</button>
         </div>
         <div className="equipment-list">
-          {Object.entries(user.equipment).map(([label, value]) => (
-            <button className="equipment-row" key={label} onClick={() => onAction(`${formatEquipmentLabel(label)} selected`)}>
+          {Object.entries(profile.equipment).map(([label, value]) => (
+            <button className="equipment-row" key={label} onClick={() => setIsEditing(true)}>
               <span className="equipment-label"><Gauge size={20} /> {formatEquipmentLabel(label)}</span>
               <span className="equipment-value">{value}<ChevronRight size={17} /></span>
             </button>
@@ -818,7 +934,17 @@ function PlayerScore({
   );
 }
 
-function SetTable({ sets, full = false, title = "Set" }: { sets: ReturnType<typeof getCompletedSets>; full?: boolean; title?: string }) {
+function SetTable({
+  profile = user,
+  sets,
+  full = false,
+  title = "Set"
+}: {
+  profile?: UserProfile;
+  sets: ReturnType<typeof getCompletedSets>;
+  full?: boolean;
+  title?: string;
+}) {
   const displaySets = sets.length ? sets : [{ games: [0, 0] as [number, number] }];
   const paddedSets = full ? [...displaySets, ...Array.from({ length: Math.max(0, 5 - displaySets.length) }, () => undefined)] : displaySets;
   return (
@@ -827,7 +953,7 @@ function SetTable({ sets, full = false, title = "Set" }: { sets: ReturnType<type
         <tr><th>{title}</th>{paddedSets.map((_, index) => <th key={index}>{index + 1}</th>)}</tr>
       </thead>
       <tbody>
-        {[[user.shortName, 0], [opponent.shortName, 1]].map(([name, playerIndex]) => (
+        {[[profile.shortName, 0], [opponent.shortName, 1]].map(([name, playerIndex]) => (
           <tr key={name}>
             <td>{name}</td>
             {paddedSets.map((set, index) => <td key={index}>{set ? set.games[playerIndex as 0 | 1] : "-"}</td>)}
@@ -872,6 +998,21 @@ function getAuthErrorMessage(error: unknown) {
   if (message.includes("auth/network-request-failed")) return "Network error. Check your connection and try again.";
 
   return message || "Account action failed. Try again.";
+}
+
+function getInitials(name: string) {
+  const initials = name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+  return initials || "AT";
+}
+
+function getShortName(name: string) {
+  const [first = "Player", last] = name.trim().split(/\s+/);
+  return last ? `${first[0]}. ${last}` : first;
 }
 
 function CourtLines() {
