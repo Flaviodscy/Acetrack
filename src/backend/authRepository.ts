@@ -71,10 +71,11 @@ export async function createEmailAccount(email: string, password: string): Promi
   if (!auth) return getLocalUser();
 
   const { createUserWithEmailAndPassword, EmailAuthProvider, linkWithCredential } = await import("firebase/auth");
-  const emailCredential = EmailAuthProvider.credential(email, password);
+  const normalizedEmail = normalizeEmail(email);
+  const emailCredential = EmailAuthProvider.credential(normalizedEmail, password);
   const credential = auth.currentUser?.isAnonymous
     ? await linkWithCredential(auth.currentUser, emailCredential)
-    : await createUserWithEmailAndPassword(auth, email, password);
+    : await createUserWithEmailAndPassword(auth, normalizedEmail, password);
   return mapFirebaseUser(credential.user);
 }
 
@@ -83,7 +84,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
   if (!auth) return getLocalUser();
 
   const { signInWithEmailAndPassword } = await import("firebase/auth");
-  const credential = await signInWithEmailAndPassword(auth, email, password);
+  const credential = await signInWithEmailAndPassword(auth, normalizeEmail(email), password);
   return mapFirebaseUser(credential.user);
 }
 
@@ -92,7 +93,7 @@ export async function sendPasswordReset(email: string) {
   if (!auth) return;
 
   const { sendPasswordResetEmail } = await import("firebase/auth");
-  await sendPasswordResetEmail(auth, email);
+  await sendPasswordResetEmail(auth, normalizeEmail(email));
 }
 
 export async function signOutAppUser() {
@@ -111,4 +112,8 @@ function getLocalUser(): AppUser {
   }
 
   return { id, isAnonymous: true, mode: "local" };
+}
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
 }

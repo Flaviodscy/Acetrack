@@ -916,39 +916,59 @@ function AccountScreen({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [formStatus, setFormStatus] = useState("");
+  const [authAction, setAuthAction] = useState<"sign-in" | "create" | "reset" | "guest" | undefined>();
   const isGuest = appUser?.mode === "firebase" && appUser.isAnonymous;
   const isRegistered = Boolean(appUser?.email);
   const createLabel = isGuest ? "Upgrade guest account" : "Create account";
   const statusLabel = isRegistered ? appUser?.email : accountStatus;
+  const normalizedEmail = email.trim().toLowerCase();
 
   async function runAuth(action: "sign-in" | "create") {
-    if (!email || password.length < 6) {
+    if (!normalizedEmail || password.length < 6) {
       setFormStatus("Use an email and a password with 6+ characters.");
       return;
     }
 
     try {
+      setAuthAction(action);
       setFormStatus(action === "sign-in" ? "Signing in..." : "Creating account...");
-      if (action === "sign-in") await onSignIn(email, password);
-      else await onCreate(email, password);
+      if (action === "sign-in") await onSignIn(normalizedEmail, password);
+      else await onCreate(normalizedEmail, password);
       setFormStatus("Account ready.");
     } catch (error) {
       setFormStatus(getAuthErrorMessage(error));
+    } finally {
+      setAuthAction(undefined);
     }
   }
 
   async function runPasswordReset() {
-    if (!email) {
+    if (!normalizedEmail) {
       setFormStatus("Enter your email first.");
       return;
     }
 
     try {
+      setAuthAction("reset");
       setFormStatus("Sending reset email...");
-      await onResetPassword(email);
+      await onResetPassword(normalizedEmail);
       setFormStatus("Password reset email sent.");
     } catch (error) {
       setFormStatus(getAuthErrorMessage(error));
+    } finally {
+      setAuthAction(undefined);
+    }
+  }
+
+  async function runGuest() {
+    try {
+      setAuthAction("guest");
+      setFormStatus("Starting guest session...");
+      await onAnonymous();
+    } catch (error) {
+      setFormStatus(getAuthErrorMessage(error));
+    } finally {
+      setAuthAction(undefined);
     }
   }
 
@@ -978,13 +998,14 @@ function AccountScreen({
           <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="6+ characters" type="password" />
         </label>
         <div className="account-actions">
-          <button className="hero-action compact" onClick={() => runAuth("sign-in")}><LogIn size={18} /> Sign in</button>
-          <button className="ghost-button" onClick={() => runAuth("create")}>{createLabel}</button>
-          <button className="ghost-button" onClick={runPasswordReset}>Forgot password</button>
-          <button className="ghost-button" onClick={onAnonymous}>Continue as guest</button>
-          {!isEntry && <button className="ghost-button quiet" onClick={onSignOut}><LogOut size={18} /> Sign out</button>}
+          <button className="hero-action compact" disabled={Boolean(authAction)} onClick={() => runAuth("sign-in")}><LogIn size={18} /> {authAction === "sign-in" ? "Signing in..." : "Sign in"}</button>
+          <button className="ghost-button" disabled={Boolean(authAction)} onClick={() => runAuth("create")}>{authAction === "create" ? "Creating..." : createLabel}</button>
+          <button className="ghost-button" disabled={Boolean(authAction)} onClick={runPasswordReset}>{authAction === "reset" ? "Sending..." : "Forgot password"}</button>
+          <button className="ghost-button" disabled={Boolean(authAction)} onClick={runGuest}>{authAction === "guest" ? "Starting..." : "Continue as guest"}</button>
+          {!isEntry && <button className="ghost-button quiet" disabled={Boolean(authAction)} onClick={onSignOut}><LogOut size={18} /> Sign out</button>}
         </div>
         <p className="save-status">{formStatus}</p>
+        <p className="auth-help">Created an account before? Use the same email with Sign in. If it says incorrect, use Forgot password.</p>
       </article>
 
       {!isEntry && <button className="ghost-button" onClick={() => onNavigate("profile")}>Back to profile</button>}
@@ -1094,13 +1115,18 @@ function formatAccountStatus(appUser: AppUser) {
 
 function getAuthErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "";
+  const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code) : "";
+  const detail = `${code} ${message}`;
 
-  if (message.includes("auth/email-already-in-use")) return "That email already has an account. Try signing in.";
-  if (message.includes("auth/invalid-email")) return "Use a valid email address.";
-  if (message.includes("auth/weak-password")) return "Use a stronger password with at least 6 characters.";
-  if (message.includes("auth/wrong-password") || message.includes("auth/invalid-credential")) return "Email or password is incorrect.";
-  if (message.includes("auth/operation-not-allowed")) return "Email login is not enabled yet in Firebase.";
-  if (message.includes("auth/network-request-failed")) return "Network error. Check your connection and try again.";
+  if (detail.includes("auth/email-already-in-use")) return "That email already has an account. Use Sign in or Forgot password.";
+  if (detail.includes("auth/invalid-email")) return "Use a valid email address.";
+  if (detail.includes("auth/weak-password")) return "Use a stronger password with at least 6 characters.";
+  if (detail.includes("auth/user-not-found")) return "No account exists for this email. Use Create account first.";
+  if (detail.includes("auth/wrong-password")) return "Wrong password. Try Forgot password.";
+  if (detail.includes("auth/invalid-credential")) return "Email or password is incorrect. If this was created before, try Forgot password.";
+  if (detail.includes("auth/too-many-requests")) return "Too many attempts. Wait a bit, then try again or reset your password.";
+  if (detail.includes("auth/operation-not-allowed")) return "Email login is not enabled yet in Firebase.";
+  if (detail.includes("auth/network-request-failed")) return "Network error. Check your connection and try again.";
 
   return message || "Account action failed. Try again.";
 }
