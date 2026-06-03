@@ -12,8 +12,8 @@ export async function saveMatchRecord(record: MatchRecord) {
 
   if (db) {
     try {
-      const { addDoc, collection } = await import("firebase/firestore");
-      await addDoc(collection(db, "matches"), record);
+      const { doc, setDoc } = await import("firebase/firestore");
+      await setDoc(doc(db, "users", record.userId, "matches", record.id), record);
       return { mode: "firebase" as const };
     } catch (error) {
       console.warn("Firebase save failed, falling back to local storage.", error);
@@ -28,8 +28,8 @@ export async function listRecentMatchRecords() {
   const db = await getFirebaseDb();
 
   if (db) {
-    const { collection, getDocs, limit, orderBy, query } = await import("firebase/firestore");
-    const snapshot = await getDocs(query(collection(db, "matches"), orderBy("createdAt", "desc"), limit(10)));
+    const { collectionGroup, getDocs, limit, orderBy, query } = await import("firebase/firestore");
+    const snapshot = await getDocs(query(collectionGroup(db, "matches"), orderBy("createdAt", "desc"), limit(10)));
     return snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })) as MatchRecord[];
   }
 

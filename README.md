@@ -20,7 +20,13 @@ The app now includes a backend repository layer. It saves match records locally 
 
 Initial Firestore collection:
 
-- `matches`: saved match recap records from the Match Complete screen.
+- `users/{userId}/matches/{matchId}`: saved match recap records from the Match Complete screen.
+
+Auth:
+
+- Anonymous auth is enabled for the MVP so players can save matches without a signup wall.
+- Email/password auth is enabled for the next profile/account step.
+- Firestore rules currently require `request.auth.uid` to match the user document path.
 
 ## Run
 

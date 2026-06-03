@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { highlights, nearbyPlayers, opponent, recapStats, recentMatches, user } from "./data/mockData";
 import { createMatchRecord } from "./backend/createMatchRecord";
+import { getCurrentAppUser } from "./backend/authRepository";
 import { getBackendMode, saveMatchRecord } from "./backend/matchRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint } from "./lib/tennisScoring";
@@ -73,7 +74,8 @@ export default function App() {
 
   async function saveCurrentMatch() {
     setSaveStatus("Saving...");
-    const result = await saveMatchRecord(createMatchRecord(match));
+    const appUser = await getCurrentAppUser();
+    const result = await saveMatchRecord(createMatchRecord(match, appUser.id));
     setSaveStatus(result.mode === "firebase" ? "Saved to Firebase" : "Saved locally");
   }
 

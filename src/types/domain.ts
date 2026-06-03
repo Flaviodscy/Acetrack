@@ -17,6 +17,7 @@ export type PlayerProfile = {
 
 export type MatchRecord = {
   id: string;
+  userId: string;
   createdAt: string;
   players: [string, string];
   winner?: string;
