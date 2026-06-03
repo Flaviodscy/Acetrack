@@ -372,8 +372,10 @@ function CompleteScreen({
       <div className="stack">
         <button className="hero-action compact" onClick={onSave}><Bookmark size={20} /> Save Match</button>
         <p className="save-status">{saveStatus || `Backend: ${backendMode === "firebase" ? "Firebase" : "local mock"}`}</p>
-        <button className="ghost-button" onClick={() => onNavigate("highlights")}><Share2 size={18} /> Create Share Card</button>
-        <button className="ghost-button" onClick={() => onNavigate("highlights")}><Play size={18} /> View Highlights</button>
+        <div className="button-pair">
+          <button className="ghost-button" onClick={() => onNavigate("highlights")}><Share2 size={18} /> Create Share Card</button>
+          <button className="ghost-button" onClick={() => onNavigate("highlights")}><Play size={18} /> View Highlights</button>
+        </div>
       </div>
     </section>
   );
@@ -639,10 +641,12 @@ function AccountScreen({
           <span><Lock size={17} /> Password</span>
           <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="6+ characters" type="password" />
         </label>
-        <button className="hero-action compact" onClick={() => runAuth("sign-in")}><LogIn size={18} /> Sign in</button>
-        <button className="ghost-button" onClick={() => runAuth("create")}>Create account</button>
-        <button className="ghost-button" onClick={onAnonymous}>Continue as guest</button>
-        <button className="ghost-button" onClick={onSignOut}><LogOut size={18} /> Sign out</button>
+        <div className="account-actions">
+          <button className="hero-action compact" onClick={() => runAuth("sign-in")}><LogIn size={18} /> Sign in</button>
+          <button className="ghost-button" onClick={() => runAuth("create")}>Create account</button>
+          <button className="ghost-button" onClick={onAnonymous}>Continue as guest</button>
+          <button className="ghost-button quiet" onClick={onSignOut}><LogOut size={18} /> Sign out</button>
+        </div>
         <p className="save-status">{formStatus}</p>
       </article>
 
