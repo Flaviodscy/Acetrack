@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Activity,
   Apple,
@@ -32,6 +32,8 @@ import {
   Zap
 } from "lucide-react";
 import { highlights, nearbyPlayers, opponent, recapStats, recentMatches, user } from "./data/mockData";
+import { createMatchRecord } from "./backend/createMatchRecord";
+import { getBackendMode, saveMatchRecord } from "./backend/matchRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint } from "./lib/tennisScoring";
 import "./styles.css";
@@ -51,6 +53,7 @@ export default function App() {
   const [match, setMatch] = usePersistentState("acetrack:live-match", createMatch([user.name, opponent.name]));
   const [activeFilter, setActiveFilter] = usePersistentState("acetrack:highlight-filter", "All");
   const [socialTab, setSocialTab] = usePersistentState("acetrack:social-tab", "Nearby");
+  const [saveStatus, setSaveStatus] = useState("");
 
   const pointDisplay = getPointDisplay(match);
   const sets = getCompletedSets(match);
@@ -66,6 +69,12 @@ export default function App() {
     const next = scorePoint(match, player);
     setMatch(next);
     if (next.winner !== undefined) setScreen("complete");
+  }
+
+  async function saveCurrentMatch() {
+    setSaveStatus("Saving...");
+    const result = await saveMatchRecord(createMatchRecord(match));
+    setSaveStatus(result.mode === "firebase" ? "Saved to Firebase" : "Saved locally");
   }
 
   return (
@@ -84,7 +93,15 @@ export default function App() {
           />
         )}
         {screen === "complete" && (
-          <CompleteScreen winnerName={winnerName} finalScore={finalScore} sets={sets} onNavigate={setScreen} />
+          <CompleteScreen
+            backendMode={getBackendMode()}
+            finalScore={finalScore}
+            saveStatus={saveStatus}
+            sets={sets}
+            winnerName={winnerName}
+            onNavigate={setScreen}
+            onSave={saveCurrentMatch}
+          />
         )}
         {screen === "highlights" && (
           <HighlightsScreen
@@ -219,15 +236,21 @@ function LiveMatchScreen({
 }
 
 function CompleteScreen({
+  backendMode,
   winnerName,
   finalScore,
   sets,
-  onNavigate
+  saveStatus,
+  onNavigate,
+  onSave
 }: {
+  backendMode: "local" | "firebase";
   winnerName: string;
   finalScore: string;
   sets: ReturnType<typeof getCompletedSets>;
+  saveStatus: string;
   onNavigate: (screen: Screen) => void;
+  onSave: () => void;
 }) {
   return (
     <section className="screen content complete-screen">
@@ -277,7 +300,8 @@ function CompleteScreen({
       </div>
 
       <div className="stack">
-        <button className="hero-action compact"><Bookmark size={20} /> Save Match</button>
+        <button className="hero-action compact" onClick={onSave}><Bookmark size={20} /> Save Match</button>
+        <p className="save-status">{saveStatus || `Backend: ${backendMode === "firebase" ? "Firebase" : "local mock"}`}</p>
         <button className="ghost-button" onClick={() => onNavigate("highlights")}><Share2 size={18} /> Create Share Card</button>
         <button className="ghost-button" onClick={() => onNavigate("highlights")}><Play size={18} /> View Highlights</button>
       </div>

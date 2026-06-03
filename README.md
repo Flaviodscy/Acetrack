@@ -8,6 +8,20 @@ Start frontend-only for Phase 1. Add a backend after the scoring and match-histo
 
 Firebase is the better first backend fit for AceTrack if the next step is quick auth, realtime live scoring sync, Firestore match records, and future storage for highlight clips. Supabase is a strong option if relational ladders, rankings, and analytics-heavy match queries become the core product. For this MVP, Firebase is likely faster and simpler; Supabase may be worth revisiting before building the social ladder deeply.
 
+The app now includes a backend repository layer. It saves match records locally by default and automatically uses Firebase Firestore when the `VITE_FIREBASE_*` values are configured.
+
+## Firebase Setup
+
+1. Create a Firebase web app.
+2. Copy `.env.example` to `.env.local`.
+3. Fill in the Firebase config values.
+4. Enable Firestore in Firebase.
+5. Restart the dev server.
+
+Initial Firestore collection:
+
+- `matches`: saved match recap records from the Match Complete screen.
+
 ## Run
 
 ```bash
