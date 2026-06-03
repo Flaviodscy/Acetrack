@@ -83,9 +83,16 @@ export default function App() {
 
   useEffect(() => {
     let isMounted = true;
+    const loadingTimeout = window.setTimeout(() => {
+      if (!isMounted) return;
+      setAccountStatus("Not signed in");
+      setAuthPhase("signed-out");
+    }, 2200);
+
     getSignedInAppUser()
       .then((appUser) => {
         if (!isMounted) return;
+        window.clearTimeout(loadingTimeout);
         if (appUser) {
           setAccountStatus(formatAccountStatus(appUser));
           setAuthPhase("signed-in");
@@ -96,12 +103,14 @@ export default function App() {
       })
       .catch(() => {
         if (!isMounted) return;
+        window.clearTimeout(loadingTimeout);
         setAccountStatus("Account unavailable");
         setAuthPhase("signed-out");
       });
 
     return () => {
       isMounted = false;
+      window.clearTimeout(loadingTimeout);
     };
   }, []);
 

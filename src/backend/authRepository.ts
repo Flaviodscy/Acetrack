@@ -1,6 +1,8 @@
 import { getFirebaseAuth, isFirebaseConfigured } from "./firebaseClient";
+import type { User } from "firebase/auth";
 
 const LOCAL_USER_KEY = "acetrack:local-user-id";
+const AUTH_STATE_TIMEOUT_MS = 1600;
 
 export type AppUser = {
   id: string;
@@ -13,13 +15,27 @@ export async function getSignedInAppUser(): Promise<AppUser | undefined> {
 
   const auth = await getFirebaseAuth();
   if (!auth) return undefined;
+  if (auth.currentUser) {
+    return { id: auth.currentUser.uid, isAnonymous: auth.currentUser.isAnonymous, mode: "firebase" };
+  }
 
   const { onAuthStateChanged } = await import("firebase/auth");
   return new Promise((resolve) => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    let isResolved = false;
+    let timeoutId: number;
+    let unsubscribe = () => {};
+    const finish = (user: User | null) => {
+      if (isResolved) return;
+      isResolved = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
       unsubscribe();
       resolve(user ? { id: user.uid, isAnonymous: user.isAnonymous, mode: "firebase" } : undefined);
+    };
+
+    unsubscribe = onAuthStateChanged(auth, (user) => {
+      finish(user);
     });
+    timeoutId = window.setTimeout(() => finish(auth.currentUser), AUTH_STATE_TIMEOUT_MS);
   });
 }
 
