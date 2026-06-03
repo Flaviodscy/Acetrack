@@ -4967,3 +4967,326 @@ h1,
     grid-template-columns: repeat(7, minmax(54px, 1fr));
   }
 }
+
+/* Responsive alignment authority: keeps all app screens balanced across phone sizes. */
+html,
+body,
+#root {
+  overflow-x: hidden;
+}
+
+.phone-frame {
+  isolation: isolate;
+}
+
+.content {
+  width: 100%;
+  max-width: 100%;
+}
+
+.screen {
+  overscroll-behavior: contain;
+}
+
+.section-row,
+.topbar,
+.match-status,
+.timer-row {
+  min-width: 0;
+}
+
+.section-row > *,
+.topbar > *,
+.match-status > *,
+.timer-row > * {
+  min-width: 0;
+}
+
+.home-screen,
+.highlights-screen,
+.social-screen,
+.profile-screen,
+.account-screen,
+.admin-screen,
+.complete-screen,
+.match-setup-screen {
+  display: grid;
+  align-content: start;
+}
+
+.recent-match-card,
+.progress-card,
+.feature-card,
+.generated-share-card,
+.gps-card,
+.ladder-card,
+.pro-card,
+.account-card,
+.edit-profile-card,
+.login-card,
+.admin-editor,
+.admin-user-card,
+.complete-score,
+.match-stats,
+.score-card,
+.set-table {
+  max-width: 100%;
+}
+
+.admin-refresh {
+  min-height: 46px;
+  margin: 0 0 16px;
+}
+
+.admin-empty {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-empty strong {
+  color: var(--ink);
+}
+
+.admin-empty span {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.player-row h3,
+.admin-row strong,
+.equipment-row .equipment-value,
+.mini-player strong,
+.mini-player span {
+  min-width: 0;
+}
+
+@media (max-width: 420px) {
+  .phone-frame:not(.is-live) {
+    min-height: 100svh;
+  }
+
+  .screen {
+    height: calc(100svh - 88px);
+  }
+
+  .auth-frame .screen,
+  .phone-frame.is-live .screen {
+    height: 100svh;
+  }
+
+  .content {
+    padding: max(20px, env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
+  }
+
+  .home-screen,
+  .highlights-screen,
+  .social-screen,
+  .profile-screen,
+  .account-screen,
+  .admin-screen,
+  .complete-screen,
+  .match-setup-screen {
+    gap: 16px;
+  }
+
+  .simple-header h1,
+  .home-screen h1,
+  .match-setup-hero h1,
+  .complete-screen .celebration h1 {
+    font-size: clamp(2.15rem, 11vw, 2.85rem);
+    line-height: 1.02;
+  }
+
+  .topbar {
+    align-items: flex-start;
+  }
+
+  .recent-match-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mini-score {
+    grid-row: auto;
+    width: 100%;
+  }
+
+  .progress-card,
+  .admin-stats,
+  .achievement-row {
+    grid-template-columns: 1fr;
+  }
+
+  .progress-card {
+    display: grid;
+    justify-items: stretch;
+    text-align: left;
+  }
+
+  .progress-ring {
+    justify-self: center;
+  }
+
+  .tabs,
+  .filter-row {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .player-row,
+  .player-row.live-player {
+    grid-template-columns: 28px 52px minmax(0, 1fr);
+    padding: 14px 6px;
+  }
+
+  .streak,
+  .points,
+  .player-row button {
+    grid-column: 3;
+    justify-self: start;
+  }
+
+  .profile-hero {
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .profile-hero h1 {
+    overflow-wrap: anywhere;
+  }
+
+  .level-row,
+  .skill {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .level-row p {
+    text-align: left;
+  }
+
+  .skill div {
+    width: 100%;
+  }
+
+  .equipment-row {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .equipment-row .equipment-value {
+    max-width: 58%;
+  }
+
+  .admin-layout,
+  .admin-editor,
+  .edit-grid,
+  .admin-form {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-user-card {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .admin-user-card .portrait.large {
+    width: 64px;
+    height: 64px;
+  }
+
+  .bottom-nav {
+    grid-template-columns: repeat(auto-fit, minmax(48px, 1fr));
+  }
+}
+
+@media (max-width: 360px) {
+  .content {
+    padding-inline: 12px;
+  }
+
+  .bottom-nav {
+    left: 6px;
+    right: 6px;
+    padding: 5px;
+  }
+
+  .bottom-nav button {
+    min-height: 52px;
+    font-size: 0.62rem;
+  }
+
+  .setup-name-grid,
+  .choice-grid.two,
+  .button-pair {
+    grid-template-columns: 1fr;
+  }
+
+  .swap-sides-button {
+    position: static;
+    transform: none;
+    justify-self: center;
+    grid-column: 1;
+  }
+}
+
+@media (min-width: 720px) and (orientation: landscape) {
+  .phone-frame:not(.is-live) .screen {
+    display: grid;
+    overflow-y: auto;
+  }
+
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen,
+  .admin-screen {
+    grid-template-columns: minmax(260px, 0.76fr) minmax(460px, 1.24fr);
+    gap: 18px 42px;
+  }
+
+  .home-screen .topbar,
+  .profile-screen .profile-hero,
+  .social-screen .simple-header,
+  .highlights-screen .simple-header,
+  .account-screen .simple-header,
+  .admin-screen .admin-header,
+  .admin-screen .admin-stats,
+  .admin-screen .admin-search,
+  .admin-screen .admin-refresh {
+    grid-column: 1;
+  }
+
+  .home-screen .section-title,
+  .home-screen .start-grid,
+  .home-screen .recent-match-card,
+  .home-screen .progress-card,
+  .profile-screen .account-card,
+  .profile-screen .level-row,
+  .profile-screen .flat-section,
+  .profile-screen .pro-card,
+  .social-screen .tabs,
+  .social-screen .section-row,
+  .social-screen .gps-card,
+  .social-screen .list-label,
+  .social-screen .player-list,
+  .social-screen .ladder-card,
+  .highlights-screen .feature-card,
+  .highlights-screen .generated-share-card,
+  .highlights-screen > .section-row,
+  .highlights-screen .filter-row,
+  .highlights-screen .highlight-grid,
+  .account-screen .login-card,
+  .account-screen > .ghost-button,
+  .admin-screen .admin-layout {
+    grid-column: 2;
+  }
+
+  .admin-screen .admin-layout {
+    grid-row: 1 / span 6;
+  }
+
+  .player-list,
+  .admin-list {
+    min-height: 0;
+  }
+}

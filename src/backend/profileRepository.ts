@@ -48,22 +48,17 @@ export async function listUserProfiles(): Promise<AdminUserProfile[]> {
 
   if (!db) return [];
 
-  try {
-    const { collectionGroup, getDocs } = await import("firebase/firestore");
-    const snapshots = await getDocs(collectionGroup(db, "profile"));
+  const { collectionGroup, getDocs } = await import("firebase/firestore");
+  const snapshots = await getDocs(collectionGroup(db, "profile"));
 
-    return snapshots.docs.map((profileDoc) => {
-      const data = profileDoc.data();
-      return {
-        ...deserializeProfile(data),
-        userId: profileDoc.ref.parent.parent?.id ?? profileDoc.id,
-        updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined
-      };
-    });
-  } catch (error) {
-    console.warn("Firebase admin profile list failed.", error);
-    return [];
-  }
+  return snapshots.docs.map((profileDoc) => {
+    const data = profileDoc.data();
+    return {
+      ...deserializeProfile(data),
+      userId: profileDoc.ref.parent.parent?.id ?? profileDoc.id,
+      updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined
+    };
+  });
 }
 
 function serializeProfile(profile: UserProfile) {

@@ -1399,21 +1399,36 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Loading users...");
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
-    setStatus("Loading users...");
-    listUserProfiles().then((items) => {
-      if (!isMounted) return;
-      setProfiles(items);
-      setSelectedId((current) => current || items[0]?.userId || "");
-      setStatus(items.length ? `${items.length} user profiles loaded` : "No user profiles found yet");
-    });
+    loadAdminProfiles(() => isMounted);
 
     return () => {
       isMounted = false;
     };
   }, []);
+
+  async function loadAdminProfiles(isMounted = () => true) {
+    setIsLoadingUsers(true);
+    setStatus("Loading user profiles...");
+    try {
+      const items = await listUserProfiles();
+      if (!isMounted()) return;
+      setProfiles(items);
+      setSelectedId((current) => items.some((item) => item.userId === current) ? current : items[0]?.userId || "");
+      setStatus(items.length ? `${items.length} user profiles loaded` : "No profile documents found yet. Ask a user to sign in once, then refresh.");
+    } catch (error) {
+      if (!isMounted()) return;
+      setProfiles([]);
+      setSelectedId("");
+      setDraft(undefined);
+      setStatus(getAdminLoadErrorMessage(error));
+    } finally {
+      if (isMounted()) setIsLoadingUsers(false);
+    }
+  }
 
   const selectedProfile = profiles.find((item) => item.userId === selectedId);
 
@@ -1483,6 +1498,9 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
         <span>Search users</span>
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, city, rating, or user id" />
       </label>
+      <button className="ghost-button admin-refresh" disabled={isLoadingUsers} onClick={() => loadAdminProfiles()}>
+        <RotateCcw size={17} /> {isLoadingUsers ? "Refreshing..." : "Refresh users"}
+      </button>
 
       <div className="admin-layout">
         <div className="admin-list" aria-label="User profiles">
@@ -1497,7 +1515,12 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
               <b>Lv {item.level}</b>
             </button>
           ))}
-          {!filteredProfiles.length && <p className="admin-empty">{status}</p>}
+          {!filteredProfiles.length && (
+            <div className="admin-empty">
+              <strong>{query ? "No matching users" : "No users visible"}</strong>
+              <span>{query ? "Try a different name, city, rating, or user id." : status}</span>
+            </div>
+          )}
         </div>
 
         <article className="admin-editor">
@@ -1821,6 +1844,17 @@ function getLocationErrorMessage(error: unknown) {
   if (code === 2) return "GPS position is unavailable";
   if (code === 3) return "GPS timed out. Try again outside";
   return error instanceof Error ? error.message : "Could not update nearby players";
+}
+
+function getAdminLoadErrorMessage(error: unknown) {
+  const detail = error instanceof Error ? error.message : String(error ?? "");
+  if (detail.includes("permission-denied") || detail.includes("Missing or insufficient permissions")) {
+    return "Admin permissions are not live yet. Deploy Firestore rules, sign out, then sign in again with gorodscyflavio@gmail.com.";
+  }
+  if (detail.includes("failed-precondition") || detail.includes("index")) {
+    return "Firestore needs an index for this admin lookup. Check Firebase console index prompts.";
+  }
+  return detail || "Could not load user profiles from Firebase.";
 }
 
 function formatAccountStatus(appUser: AppUser) {

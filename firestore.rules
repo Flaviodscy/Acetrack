@@ -20,6 +20,10 @@ service cloud.firestore {
       allow read, write: if isOwner(userId) || isAdmin();
     }
 
+    match /{path=**}/profile/{profileId} {
+      allow read: if isAdmin();
+    }
+
     match /publicLocations/{userId} {
       allow read: if request.auth != null;
       allow write: if isOwner(userId);
