@@ -59,6 +59,7 @@ import "./styles.css";
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account" | "admin";
 type AuthPhase = "loading" | "signed-out" | "signed-in";
 const ADMIN_EMAIL = "gorodscyflavio@gmail.com";
+const AUTH_ACTION_TIMEOUT_MS = 15000;
 
 const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
   { screen: "home", label: "Play", icon: Home },
@@ -153,10 +154,23 @@ export default function App() {
     return profile;
   }
 
+  function startProfileHydration(appUser: AppUser) {
+    hydrateProfile(appUser).catch((error) => {
+      console.warn("Profile sync failed after sign-in.", error);
+      setProfileSaveStatus("Profile sync needs retry");
+    });
+  }
+
   function addPoint(player: 0 | 1) {
     const next = scorePoint(match, player);
     setMatch(next);
     if (next.winner !== undefined) setScreen("complete");
+  }
+
+  function startNewMatch() {
+    setMatch(createMatch([profile.name, opponent.name]));
+    setSaveStatus("");
+    setScreen("live");
   }
 
   async function saveCurrentMatch() {
@@ -170,24 +184,34 @@ export default function App() {
 
   async function signInAccount(email: string, password: string) {
     setAccountStatus("Signing in...");
-    const appUser = await signInWithEmail(email, password);
-    setAppUser(appUser);
-    setAccountStatus(formatAccountStatus(appUser));
-    await hydrateProfile(appUser);
-    setAuthPhase("signed-in");
-    setScreen("home");
-    showMessage("Signed in");
+    try {
+      const appUser = await signInWithEmail(email, password);
+      setAppUser(appUser);
+      setAccountStatus(formatAccountStatus(appUser));
+      setAuthPhase("signed-in");
+      setScreen("home");
+      startProfileHydration(appUser);
+      showMessage("Signed in");
+    } catch (error) {
+      setAccountStatus("Sign in failed");
+      throw error;
+    }
   }
 
   async function createAccount(email: string, password: string) {
     setAccountStatus("Creating account...");
-    const appUser = await createEmailAccount(email, password);
-    setAppUser(appUser);
-    setAccountStatus(formatAccountStatus(appUser));
-    await hydrateProfile(appUser);
-    setAuthPhase("signed-in");
-    setScreen("home");
-    showMessage("Account created");
+    try {
+      const appUser = await createEmailAccount(email, password);
+      setAppUser(appUser);
+      setAccountStatus(formatAccountStatus(appUser));
+      setAuthPhase("signed-in");
+      setScreen("home");
+      startProfileHydration(appUser);
+      showMessage("Account created");
+    } catch (error) {
+      setAccountStatus("Account creation failed");
+      throw error;
+    }
   }
 
   async function resetPassword(email: string) {
@@ -197,13 +221,18 @@ export default function App() {
 
   async function continueAnonymously() {
     setAccountStatus("Starting guest session...");
-    const appUser = await getCurrentAppUser();
-    setAppUser(appUser);
-    setAccountStatus(formatAccountStatus(appUser));
-    await hydrateProfile(appUser);
-    setAuthPhase("signed-in");
-    setScreen("home");
-    showMessage("Guest session ready");
+    try {
+      const appUser = await getCurrentAppUser();
+      setAppUser(appUser);
+      setAccountStatus(formatAccountStatus(appUser));
+      setAuthPhase("signed-in");
+      setScreen("home");
+      startProfileHydration(appUser);
+      showMessage("Guest session ready");
+    } catch (error) {
+      setAccountStatus("Guest session failed");
+      throw error;
+    }
   }
 
   async function signOutAccount() {
@@ -253,7 +282,7 @@ export default function App() {
     <main className="app-shell">
       <div className={`phone-frame ${screen === "live" ? "is-live" : ""}`}>
         <CourtLines />
-        {screen === "home" && <HomeScreen profile={profile} onAction={showMessage} onNavigate={setScreen} />}
+        {screen === "home" && <HomeScreen profile={profile} onAction={showMessage} onNavigate={setScreen} onStartMatch={startNewMatch} />}
         {screen === "live" && (
           <LiveMatchScreen
             matchWinner={match.winner}
@@ -266,6 +295,7 @@ export default function App() {
             onComplete={() => setScreen("complete")}
             onEndMatch={() => setScreen("complete")}
             onExit={() => setScreen("home")}
+            onNewMatch={startNewMatch}
           />
         )}
         {screen === "complete" && (
@@ -331,11 +361,13 @@ export default function App() {
 function HomeScreen({
   profile,
   onAction,
-  onNavigate
+  onNavigate,
+  onStartMatch
 }: {
   profile: UserProfile;
   onAction: (message: string) => void;
   onNavigate: (screen: Screen) => void;
+  onStartMatch: () => void;
 }) {
   return (
     <section className="screen content home-screen">
@@ -350,7 +382,7 @@ function HomeScreen({
 
       <h2 className="section-title">Get started</h2>
       <div className="start-grid">
-        <InfoCard icon={Play} title="Start Match" value="Begin scoring" onClick={() => onNavigate("live")} />
+        <InfoCard icon={Play} title="Start Match" value="Begin scoring" onClick={onStartMatch} />
         <InfoCard icon={Users} title="Quick Challenge" value="Find players" onClick={() => onNavigate("social")} />
         <InfoCard icon={Apple} title="Watch Connected" value="Ready" onClick={() => onAction("Watch companion is ready")} />
       </div>
@@ -409,7 +441,8 @@ function LiveMatchScreen({
   onUndo,
   onComplete,
   onEndMatch,
-  onExit
+  onExit,
+  onNewMatch
 }: {
   pointDisplay: [string, string];
   profile: UserProfile;
@@ -421,6 +454,7 @@ function LiveMatchScreen({
   onComplete: () => void;
   onEndMatch: () => void;
   onExit: () => void;
+  onNewMatch: () => void;
 }) {
   return (
     <section className="screen content live-screen">
@@ -431,8 +465,9 @@ function LiveMatchScreen({
         </div>
         <div className="live-top-actions">
           <span><Apple size={16} /> Watch Connected</span>
-          <button onClick={onExit}>Exit</button>
-          <button className="danger" onClick={onEndMatch}>End Match</button>
+          <button onClick={onNewMatch}><Play size={14} /> New</button>
+          <button onClick={onExit}><LogOut size={14} /> Exit</button>
+          <button className="danger" onClick={onEndMatch}><Trophy size={14} /> End</button>
         </div>
       </div>
 
@@ -454,9 +489,9 @@ function LiveMatchScreen({
           <span className="action-icon"><Plus size={26} /></span>
           <span className="action-label">+ Point</span>
         </button>
-        <button className="match-action primary" onClick={() => onPoint(1)}>
+        <button className="match-action opponent" onClick={() => onPoint(1)}>
           <span className="action-icon"><Minus size={26} /></span>
-          <span className="action-label">Opponent</span>
+          <span className="action-label">Opponent Point</span>
         </button>
         <button className="match-action" onClick={() => onPoint(0)}>
           <span className="action-icon"><Zap size={24} /></span>
@@ -940,8 +975,11 @@ function AccountScreen({
     try {
       setAuthAction(action);
       setFormStatus(action === "sign-in" ? "Signing in..." : "Creating account...");
-      if (action === "sign-in") await onSignIn(normalizedEmail, password);
-      else await onCreate(normalizedEmail, password);
+      if (action === "sign-in") {
+        await withFriendlyTimeout(onSignIn(normalizedEmail, password), "Sign in is taking too long. Check the connection and try again.");
+      } else {
+        await withFriendlyTimeout(onCreate(normalizedEmail, password), "Account creation is taking too long. Check the connection and try again.");
+      }
       setFormStatus("Account ready.");
     } catch (error) {
       setFormStatus(getAuthErrorMessage(error));
@@ -959,7 +997,7 @@ function AccountScreen({
     try {
       setAuthAction("reset");
       setFormStatus("Sending reset email...");
-      await onResetPassword(normalizedEmail);
+      await withFriendlyTimeout(onResetPassword(normalizedEmail), "Password reset is taking too long. Check the connection and try again.");
       setFormStatus("Password reset email sent.");
     } catch (error) {
       setFormStatus(getAuthErrorMessage(error));
@@ -972,7 +1010,7 @@ function AccountScreen({
     try {
       setAuthAction("guest");
       setFormStatus("Starting guest session...");
-      await onAnonymous();
+      await withFriendlyTimeout(onAnonymous(), "Guest session is taking too long. Check the connection and try again.");
     } catch (error) {
       setFormStatus(getAuthErrorMessage(error));
     } finally {
@@ -1315,6 +1353,16 @@ function getAuthErrorMessage(error: unknown) {
   if (detail.includes("auth/network-request-failed")) return "Network error. Check your connection and try again.";
 
   return message || "Account action failed. Try again.";
+}
+
+function withFriendlyTimeout<T>(promise: Promise<T>, timeoutMessage: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => reject(new Error(timeoutMessage)), AUTH_ACTION_TIMEOUT_MS);
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(timeoutId));
+  });
 }
 
 function getInitials(name: string) {

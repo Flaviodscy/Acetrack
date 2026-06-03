@@ -4365,3 +4365,145 @@ h1,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Live match section refinement. */
+.live-screen .match-status {
+  padding: 2px 0 4px;
+}
+
+.live-top-actions {
+  max-width: 100%;
+}
+
+.live-top-actions span,
+.live-top-actions button {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.live-top-actions button {
+  justify-content: center;
+}
+
+.live-top-actions button svg {
+  flex: 0 0 auto;
+}
+
+.live-screen .score-card {
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 90% 14%, rgba(205, 234, 95, 0.18), transparent 24%),
+    rgba(255, 255, 255, 0.78);
+}
+
+.live-screen .set-table {
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.live-screen .timer-row {
+  min-height: 48px;
+}
+
+.live-screen .point-actions {
+  align-items: stretch;
+}
+
+.live-screen .match-action {
+  min-height: 88px;
+  justify-content: flex-start;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(38, 54, 31, 0.045);
+}
+
+.live-screen .match-action .action-icon {
+  margin-top: 8px;
+}
+
+.live-screen .match-action.primary {
+  background: linear-gradient(180deg, rgba(238, 248, 199, 0.78), rgba(255, 255, 255, 0.48));
+}
+
+.live-screen .match-action.opponent .action-icon {
+  background: #f4f6ef;
+  color: #5f685b;
+}
+
+.live-screen .match-action.opponent .action-label {
+  color: #3f483b;
+}
+
+@media (max-width: 420px) {
+  .live-screen .match-status {
+    gap: 10px;
+  }
+
+  .live-top-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .live-top-actions span {
+    grid-column: 1 / -1;
+    order: -1;
+  }
+
+  .live-top-actions button {
+    padding-inline: 8px;
+  }
+
+  .live-screen .point-actions {
+    grid-template-columns: repeat(5, minmax(64px, 1fr));
+    margin-inline: -4px;
+    padding-inline: 4px;
+  }
+
+  .live-screen .match-action {
+    min-height: 84px;
+  }
+
+  .live-screen .action-label {
+    min-height: 28px;
+    display: grid;
+    place-items: start center;
+  }
+}
+
+@media (orientation: landscape) {
+  .live-top-actions {
+    flex-wrap: nowrap;
+  }
+
+  .live-top-actions span {
+    display: inline-flex;
+  }
+
+  .live-screen .point-actions {
+    gap: clamp(8px, 1.4vw, 14px);
+  }
+
+  .live-screen .match-action {
+    min-height: clamp(74px, 16vh, 104px);
+  }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .live-top-actions span {
+    display: none;
+  }
+
+  .live-top-actions button {
+    min-height: 32px;
+    padding-inline: 10px;
+  }
+
+  .live-screen .match-action {
+    border-radius: 16px;
+  }
+
+  .live-screen .match-action .action-icon {
+    margin-top: 6px;
+  }
+}
