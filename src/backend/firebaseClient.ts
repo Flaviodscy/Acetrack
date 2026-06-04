@@ -14,6 +14,7 @@ const firebaseConfig = {
 let app: FirebaseApp | undefined;
 let db: Firestore | undefined;
 let auth: Auth | undefined;
+let authPersistenceReady: Promise<void> | undefined;
 
 export function isFirebaseConfigured() {
   return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId);
@@ -37,7 +38,11 @@ export async function getFirebaseDb() {
 export async function getFirebaseAuth() {
   const firebaseApp = await getFirebaseApp();
   if (!firebaseApp) return undefined;
-  const { getAuth } = await import("firebase/auth");
+  const { browserLocalPersistence, getAuth, setPersistence } = await import("firebase/auth");
   auth ??= getAuth(firebaseApp);
+  authPersistenceReady ??= setPersistence(auth, browserLocalPersistence).catch((error) => {
+    console.warn("Firebase auth persistence could not be set.", error);
+  });
+  await authPersistenceReady;
   return auth;
 }

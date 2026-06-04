@@ -49,10 +49,10 @@ import { createMatchRecord, type MatchFeedbackInput, type MatchStatsInput } from
 import {
   createEmailAccount,
   getCurrentAppUser,
-  getSignedInAppUser,
   sendPasswordReset,
   signInWithEmail,
   signOutAppUser,
+  subscribeToAppAuthState,
   type AppUser
 } from "./backend/authRepository";
 import { getBackendMode, listUserMatchRecords, saveMatchRecord } from "./backend/matchRepository";
@@ -152,6 +152,8 @@ export default function App() {
   const [appUser, setAppUser] = useState<AppUser | undefined>();
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("Voice ready");
+  const hydratedUserRef = useRef<string | undefined>(undefined);
+  const screenRef = useRef(screen);
   const voiceRecognitionRef = useRef<{ start: () => void; stop: () => void; abort?: () => void; onend: (() => void) | null; onerror: ((event: unknown) => void) | null; onresult: ((event: unknown) => void) | null; continuous?: boolean; interimResults?: boolean; lang?: string } | undefined>(undefined);
 
   const progression = useMemo(() => getMatchProgression(matchRecords), [matchRecords]);
@@ -165,31 +167,54 @@ export default function App() {
   const incomingChallenges = incomingActions.filter((action) => action.type === "challenge");
 
   useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
+
+  useEffect(() => {
     let isMounted = true;
+    let unsubscribeAuth = () => {};
     const loadingTimeout = window.setTimeout(() => {
       if (!isMounted) return;
       setAccountStatus("Not signed in");
       setAuthPhase("signed-out");
-    }, 2200);
+    }, 3200);
 
-    getSignedInAppUser()
-      .then((appUser) => {
+    subscribeToAppAuthState(
+      (nextUser) => {
         if (!isMounted) return;
         window.clearTimeout(loadingTimeout);
-        if (appUser) {
-          setAppUser(appUser);
-          setAccountStatus(formatAccountStatus(appUser));
-          hydrateProfile(appUser);
-          setAuthPhase("signed-in");
-        } else {
-          setAppUser(undefined);
-          setAccountStatus("Not signed in");
-          setAuthPhase("signed-out");
+        if (nextUser) {
+          finishSignedIn(nextUser);
+          return;
         }
-      })
-      .catch(() => {
+
+        hydratedUserRef.current = undefined;
+        setAppUser(undefined);
+        setAccountStatus("Not signed in");
+        setAuthPhase("signed-out");
+      },
+      (error) => {
         if (!isMounted) return;
         window.clearTimeout(loadingTimeout);
+        console.warn("Firebase auth state failed.", error);
+        hydratedUserRef.current = undefined;
+        setAppUser(undefined);
+        setAccountStatus("Account unavailable");
+        setAuthPhase("signed-out");
+      }
+    )
+      .then((unsubscribe) => {
+        if (!isMounted) {
+          unsubscribe();
+          return;
+        }
+        unsubscribeAuth = unsubscribe;
+      })
+      .catch((error) => {
+        if (!isMounted) return;
+        window.clearTimeout(loadingTimeout);
+        console.warn("Firebase auth listener failed.", error);
+        hydratedUserRef.current = undefined;
         setAppUser(undefined);
         setAccountStatus("Account unavailable");
         setAuthPhase("signed-out");
@@ -198,6 +223,7 @@ export default function App() {
     return () => {
       isMounted = false;
       window.clearTimeout(loadingTimeout);
+      unsubscribeAuth();
     };
   }, []);
 
@@ -294,6 +320,23 @@ export default function App() {
       console.warn("Profile sync failed after sign-in.", error);
       setProfileSaveStatus("Profile sync needs retry");
     });
+  }
+
+  function finishSignedIn(appUser: AppUser, options: { message?: string; navigateHome?: boolean } = {}) {
+    setAppUser(appUser);
+    setAccountStatus(formatAccountStatus(appUser));
+    setAuthPhase("signed-in");
+
+    if (options.navigateHome || screenRef.current === "account") {
+      setScreen("home");
+    }
+
+    if (hydratedUserRef.current !== appUser.id) {
+      hydratedUserRef.current = appUser.id;
+      startProfileHydration(appUser);
+    }
+
+    if (options.message) showMessage(options.message);
   }
 
   function addPoint(player: 0 | 1, pointType: "ace" | "point" = "point") {
@@ -501,12 +544,7 @@ export default function App() {
     setAccountStatus("Signing in...");
     try {
       const appUser = await signInWithEmail(email, password);
-      setAppUser(appUser);
-      setAccountStatus(formatAccountStatus(appUser));
-      setAuthPhase("signed-in");
-      setScreen("home");
-      startProfileHydration(appUser);
-      showMessage("Signed in");
+      finishSignedIn(appUser, { message: "Signed in", navigateHome: true });
     } catch (error) {
       setAccountStatus("Sign in failed");
       throw error;
@@ -517,12 +555,7 @@ export default function App() {
     setAccountStatus("Creating account...");
     try {
       const appUser = await createEmailAccount(email, password);
-      setAppUser(appUser);
-      setAccountStatus(formatAccountStatus(appUser));
-      setAuthPhase("signed-in");
-      setScreen("home");
-      startProfileHydration(appUser);
-      showMessage("Account created");
+      finishSignedIn(appUser, { message: "Account created", navigateHome: true });
     } catch (error) {
       setAccountStatus("Account creation failed");
       throw error;
@@ -538,12 +571,7 @@ export default function App() {
     setAccountStatus("Starting guest session...");
     try {
       const appUser = await getCurrentAppUser();
-      setAppUser(appUser);
-      setAccountStatus(formatAccountStatus(appUser));
-      setAuthPhase("signed-in");
-      setScreen("home");
-      startProfileHydration(appUser);
-      showMessage("Guest session ready");
+      finishSignedIn(appUser, { message: "Guest session ready", navigateHome: true });
     } catch (error) {
       setAccountStatus("Guest session failed");
       throw error;
@@ -552,6 +580,7 @@ export default function App() {
 
   async function signOutAccount() {
     await signOutAppUser();
+    hydratedUserRef.current = undefined;
     setAppUser(undefined);
     setAccountStatus("Signed out");
     setProfileSaveStatus("");
@@ -3004,6 +3033,7 @@ function getAuthErrorMessage(error: unknown) {
   const detail = `${code} ${message}`;
 
   if (detail.includes("auth/email-already-in-use")) return "That email already has an account. Use Sign in or Forgot password.";
+  if (detail.includes("auth/credential-already-in-use")) return "That email is already linked to another account. Sign out, then sign in with that email.";
   if (detail.includes("auth/invalid-email")) return "Use a valid email address.";
   if (detail.includes("auth/weak-password")) return "Use a stronger password with at least 6 characters.";
   if (detail.includes("auth/user-not-found")) return "No account exists for this email. Use Create account first.";
@@ -3011,7 +3041,11 @@ function getAuthErrorMessage(error: unknown) {
   if (detail.includes("auth/invalid-credential")) return "Email or password is incorrect. If this was created before, try Forgot password.";
   if (detail.includes("auth/too-many-requests")) return "Too many attempts. Wait a bit, then try again or reset your password.";
   if (detail.includes("auth/operation-not-allowed")) return "Email login is not enabled yet in Firebase.";
+  if (detail.includes("auth/unauthorized-domain")) return "This app domain is not authorized in Firebase Auth.";
+  if (detail.includes("auth/user-disabled")) return "This account is disabled.";
+  if (detail.includes("auth/timeout")) return "Firebase did not answer. Check your connection, close and reopen the app, then try again.";
   if (detail.includes("auth/network-request-failed")) return "Network error. Check your connection and try again.";
+  if (message.toLowerCase().includes("taking too long")) return message;
 
   return message || "Account action failed. Try again.";
 }

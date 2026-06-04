@@ -3,6 +3,7 @@ import type { User } from "firebase/auth";
 
 const LOCAL_USER_KEY = "acetrack:local-user-id";
 const AUTH_STATE_TIMEOUT_MS = 1600;
+const FIREBASE_AUTH_TIMEOUT_MS = 12000;
 
 export type AppUser = {
   email?: string | null;
@@ -44,6 +45,29 @@ export async function getSignedInAppUser(): Promise<AppUser | undefined> {
   });
 }
 
+export async function subscribeToAppAuthState(
+  onChange: (appUser: AppUser | undefined) => void,
+  onError?: (error: unknown) => void
+) {
+  if (!isFirebaseConfigured()) {
+    onChange(undefined);
+    return () => {};
+  }
+
+  const auth = await getFirebaseAuth();
+  if (!auth) {
+    onChange(undefined);
+    return () => {};
+  }
+
+  const { onAuthStateChanged } = await import("firebase/auth");
+  return onAuthStateChanged(
+    auth,
+    (user) => onChange(user ? mapFirebaseUser(user) : undefined),
+    (error) => onError?.(error)
+  );
+}
+
 export async function getCurrentAppUser(): Promise<AppUser> {
   if (!isFirebaseConfigured()) {
     return getLocalUser();
@@ -58,7 +82,7 @@ export async function getCurrentAppUser(): Promise<AppUser> {
 
   try {
     const { signInAnonymously } = await import("firebase/auth");
-    const credential = await signInAnonymously(auth);
+    const credential = await withAuthTimeout(signInAnonymously(auth), "Guest session");
     return mapFirebaseUser(credential.user);
   } catch (error) {
     console.warn("Firebase auth failed, falling back to local user.", error);
@@ -74,8 +98,8 @@ export async function createEmailAccount(email: string, password: string): Promi
   const normalizedEmail = normalizeEmail(email);
   const emailCredential = EmailAuthProvider.credential(normalizedEmail, password);
   const credential = auth.currentUser?.isAnonymous
-    ? await linkWithCredential(auth.currentUser, emailCredential)
-    : await createUserWithEmailAndPassword(auth, normalizedEmail, password);
+    ? await withAuthTimeout(linkWithCredential(auth.currentUser, emailCredential), "Account creation")
+    : await withAuthTimeout(createUserWithEmailAndPassword(auth, normalizedEmail, password), "Account creation");
   return mapFirebaseUser(credential.user);
 }
 
@@ -84,7 +108,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
   if (!auth) return getLocalUser();
 
   const { signInWithEmailAndPassword } = await import("firebase/auth");
-  const credential = await signInWithEmailAndPassword(auth, normalizeEmail(email), password);
+  const credential = await withAuthTimeout(signInWithEmailAndPassword(auth, normalizeEmail(email), password), "Sign in");
   return mapFirebaseUser(credential.user);
 }
 
@@ -93,7 +117,7 @@ export async function sendPasswordReset(email: string) {
   if (!auth) return;
 
   const { sendPasswordResetEmail } = await import("firebase/auth");
-  await sendPasswordResetEmail(auth, normalizeEmail(email));
+  await withAuthTimeout(sendPasswordResetEmail(auth, normalizeEmail(email)), "Password reset");
 }
 
 export async function signOutAppUser() {
@@ -101,7 +125,7 @@ export async function signOutAppUser() {
   if (!auth) return;
 
   const { signOut } = await import("firebase/auth");
-  await signOut(auth);
+  await withAuthTimeout(signOut(auth), "Sign out");
 }
 
 function getLocalUser(): AppUser {
@@ -116,4 +140,19 @@ function getLocalUser(): AppUser {
 
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function withAuthTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      const error = new Error(`${label} is taking too long. Check your connection and try again.`);
+      (error as Error & { code?: string }).code = "auth/timeout";
+      reject(error);
+    }, FIREBASE_AUTH_TIMEOUT_MS);
+
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => window.clearTimeout(timeoutId));
+  });
 }
