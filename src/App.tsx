@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity,
   ArrowRight,
   Bell,
   Bookmark,
@@ -81,6 +80,7 @@ import "./styles.css";
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account" | "admin";
 type AuthPhase = "loading" | "signed-out" | "signed-in";
 type MatchMode = "setup" | "playing";
+type PointTag = { acePlayer?: 0 | 1 };
 type MatchProgression = {
   gamesLost: number;
   gamesWon: number;
@@ -122,7 +122,6 @@ const emptyMatchStats: MatchStatsInput = {
 
 const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
   { screen: "home", label: "Play", icon: Home },
-  { screen: "live", label: "Match", icon: Activity },
   { screen: "highlights", label: "Matches", icon: Calendar },
   { screen: "social", label: "Social", icon: Users },
   { screen: "profile", label: "Profile", icon: CircleUserRound }
@@ -136,6 +135,8 @@ export default function App() {
   const [matchOptions, setMatchOptions] = usePersistentState<MatchOptions>("acetrack:match-options", defaultMatchOptions);
   const [matchStartedAt, setMatchStartedAt] = usePersistentState<number | undefined>("acetrack:match-started-at", undefined);
   const [matchStats, setMatchStats] = usePersistentState<MatchStatsInput>("acetrack:match-stats", emptyMatchStats);
+  const [pointTags, setPointTags] = usePersistentState<PointTag[]>("acetrack:point-tags", []);
+  const [pendingAce, setPendingAce] = usePersistentState<0 | 1 | undefined>("acetrack:pending-ace", undefined);
   const [skillFeedback, setSkillFeedback] = usePersistentState<SkillFeedback>("acetrack:skill-feedback", {});
   const [opponentSkillFeedback, setOpponentSkillFeedback] = usePersistentState<SkillFeedback>("acetrack:opponent-skill-feedback", {});
   const [activeFilter, setActiveFilter] = usePersistentState("acetrack:highlight-filter", "All");
@@ -339,19 +340,62 @@ export default function App() {
     if (options.message) showMessage(options.message);
   }
 
-  function addPoint(player: 0 | 1, pointType: "ace" | "point" = "point") {
+  function addPoint(player: 0 | 1) {
+    if (match.winner !== undefined) return;
+
+    if (pendingAce !== undefined && pendingAce !== player) {
+      showMessage(`Ace is tagged for ${match.players[pendingAce]}. Score that player or clear the tag.`);
+      return;
+    }
+
     const next = scorePoint(match, player);
     setMatch(next);
-    if (pointType === "ace") {
+    const pointTag: PointTag = pendingAce === player ? { acePlayer: player } : {};
+    setPointTags((current) => [...current, pointTag]);
+    if (pointTag.acePlayer !== undefined) {
       setMatchStats((current) => ({ ...current, aces: incrementPair(current.aces, player) }));
     }
+    setPendingAce(undefined);
     playUiSound(player === 0 ? "point" : "opponent", matchOptions.soundEnabled);
     if (next.winner !== undefined) setScreen("complete");
+  }
+
+  function toggleAceTag(player: 0 | 1) {
+    setPendingAce((current) => {
+      const next = current === player ? undefined : player;
+      showMessage(next === undefined ? "Ace tag cleared" : `Ace tagged for ${match.players[next]}. Tap their point to score it.`);
+      return next;
+    });
+    playUiSound("tap", matchOptions.soundEnabled);
+  }
+
+  function undoMatchAction() {
+    if (pendingAce !== undefined) {
+      setPendingAce(undefined);
+      showMessage("Ace tag cleared");
+      playUiSound("undo", matchOptions.soundEnabled);
+      return;
+    }
+
+    if (!match.history.length) {
+      showMessage("No point to undo");
+      return;
+    }
+
+    const lastTag = pointTags.at(-1);
+    setMatch(undoPoint(match));
+    setPointTags((current) => current.slice(0, -1));
+    if (lastTag?.acePlayer !== undefined) {
+      setMatchStats((current) => ({ ...current, aces: decrementPair(current.aces, lastTag.acePlayer!) }));
+    }
+    playUiSound("undo", matchOptions.soundEnabled);
   }
 
   function startNewMatch() {
     setMatchMode("setup");
     setSaveStatus("");
+    setPointTags([]);
+    setPendingAce(undefined);
     setScreen("live");
   }
 
@@ -366,6 +410,8 @@ export default function App() {
     setMatchOptions(nextOptions);
     setMatchMode("setup");
     setSaveStatus("");
+    setPointTags([]);
+    setPendingAce(undefined);
     setScreen("live");
   }
 
@@ -394,6 +440,8 @@ export default function App() {
     setMatch(nextMatch);
     setMatchStartedAt(Date.now());
     setMatchStats(emptyMatchStats);
+    setPointTags([]);
+    setPendingAce(undefined);
     setSkillFeedback({});
     setOpponentSkillFeedback({});
     setMatchMode("playing");
@@ -457,8 +505,7 @@ export default function App() {
   function handleVoiceCommand(transcript: string) {
     const command = transcript.toLowerCase();
     if (command.includes("undo") || command.includes("back")) {
-      setMatch((current) => undoPoint(current));
-      playUiSound("undo", matchOptions.soundEnabled);
+      undoMatchAction();
       return;
     }
     if (command.includes("end match") || command.includes("finish match")) {
@@ -472,14 +519,15 @@ export default function App() {
     }
     if (command.includes("ace")) {
       if (command.includes("opponent") || command.includes("player two") || command.includes("their") || command.includes("them") || commandMatchesSide(command, match.players[1])) {
-        addPoint(1, "ace");
+        toggleAceTag(1);
         return;
       }
       if (command.includes("me") || command.includes("player one") || commandMatchesSide(command, match.players[0])) {
-        addPoint(0, "ace");
+        toggleAceTag(0);
         return;
       }
-      addPoint(match.server, "ace");
+      setVoiceStatus("Say ace plus a player name");
+      showMessage(`Say "Ace ${getCompactSideName(match.players[0])}" or "Ace ${getCompactSideName(match.players[1])}"`);
       return;
     }
     if (command.includes("opponent") || command.includes("player two") || command.includes("their") || command.includes("them") || commandMatchesSide(command, match.players[1])) {
@@ -623,7 +671,7 @@ export default function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={screen === "live" ? "app-shell is-live-shell" : "app-shell"}>
       <div className={`phone-frame ${screen === "live" ? "is-live" : ""}`}>
         <CourtLines />
         {screen === "home" && (
@@ -644,6 +692,7 @@ export default function App() {
             options={matchOptions}
             profileName={displayProfile.name}
             onAction={showMessage}
+            onExit={() => setScreen("home")}
             onStart={beginMatch}
             onUpdate={setMatchOptions}
           />
@@ -654,6 +703,7 @@ export default function App() {
             matchWinner={match.winner}
             options={matchOptions}
             playerNames={match.players}
+            pendingAce={pendingAce}
             pointDisplay={pointDisplay}
             profile={displayProfile}
             server={match.server}
@@ -661,12 +711,9 @@ export default function App() {
             elapsedTime={elapsedMatchTime}
             onAction={showMessage}
             onPoint={addPoint}
-            onAce={(player) => addPoint(player, "ace")}
+            onAceTag={toggleAceTag}
             onSoundToggle={toggleSound}
-            onUndo={() => {
-              setMatch(undoPoint(match));
-              playUiSound("undo", matchOptions.soundEnabled);
-            }}
+            onUndo={undoMatchAction}
             onComplete={() => setScreen("complete")}
             onEndMatch={() => {
               playUiSound("end", matchOptions.soundEnabled);
@@ -760,7 +807,7 @@ export default function App() {
             onDismiss={dismissIncomingAction}
           />
         )}
-        <BottomNav active={screen} isAdmin={isAdmin} onNavigate={setScreen} />
+        {screen !== "live" && <BottomNav active={screen} isAdmin={isAdmin} onNavigate={setScreen} />}
         {appMessage && <div className="toast">{appMessage}</div>}
       </div>
     </main>
@@ -878,12 +925,14 @@ function MatchSetupScreen({
   options,
   profileName,
   onAction,
+  onExit,
   onStart,
   onUpdate
 }: {
   options: MatchOptions;
   profileName: string;
   onAction: (message: string) => void;
+  onExit: () => void;
   onStart: (options: MatchOptions) => void;
   onUpdate: (options: MatchOptions) => void;
 }) {
@@ -910,7 +959,10 @@ function MatchSetupScreen({
   return (
     <section className="screen content match-setup-screen">
       <header className="match-setup-hero">
-        <p className="eyebrow"><span className="status-dot" /> New Match</p>
+        <div className="setup-hero-top">
+          <p className="eyebrow"><span className="status-dot" /> New Match</p>
+          <button className="setup-exit-button" onClick={onExit}><X size={16} /> Play</button>
+        </div>
         <h1>Set the court.</h1>
       </header>
 
@@ -987,6 +1039,7 @@ function LiveMatchScreen({
   isVoiceListening,
   options,
   playerNames,
+  pendingAce,
   pointDisplay,
   profile,
   server,
@@ -994,7 +1047,7 @@ function LiveMatchScreen({
   elapsedTime,
   matchWinner,
   onAction,
-  onAce,
+  onAceTag,
   onPoint,
   onSoundToggle,
   onUndo,
@@ -1009,6 +1062,7 @@ function LiveMatchScreen({
   isVoiceListening: boolean;
   options: MatchOptions;
   playerNames: [string, string];
+  pendingAce?: 0 | 1;
   pointDisplay: [string, string];
   profile: UserProfile;
   server: 0 | 1;
@@ -1016,7 +1070,7 @@ function LiveMatchScreen({
   elapsedTime: string;
   matchWinner?: 0 | 1;
   onAction: (message: string) => void;
-  onAce: (player: 0 | 1) => void;
+  onAceTag: (player: 0 | 1) => void;
   onPoint: (player: 0 | 1) => void;
   onSoundToggle: () => void;
   onUndo: () => void;
@@ -1030,6 +1084,9 @@ function LiveMatchScreen({
 }) {
   const sideLabels = playerNames;
   const compactSideLabels = sideLabels.map(getCompactSideName) as [string, string];
+  const scoringStatus = pendingAce !== undefined
+    ? `Ace tagged for ${sideLabels[pendingAce]} · tap Point ${compactSideLabels[pendingAce]}`
+    : voiceStatus;
 
   return (
     <section className="screen content live-screen">
@@ -1066,13 +1123,15 @@ function LiveMatchScreen({
       <SetTable playerNames={playerNames} profile={profile} sets={sets} full />
 
       <div className="timer-row live-remote-row">
-        <span><Radio size={16} /> {voiceStatus}</span>
+        <span>{pendingAce !== undefined ? <Zap size={16} /> : <Radio size={16} />} {scoringStatus}</span>
         <strong><Clock3 size={16} /> {elapsedTime}</strong>
       </div>
       <div className="voice-command-panel">
         {[
-          ["Me point", "point me"],
-          ["Opponent", "opponent point"],
+          [`Point ${compactSideLabels[0]}`, `point ${sideLabels[0]}`],
+          [`Point ${compactSideLabels[1]}`, `point ${sideLabels[1]}`],
+          [`Ace ${compactSideLabels[0]}`, `ace ${sideLabels[0]}`],
+          [`Ace ${compactSideLabels[1]}`, `ace ${sideLabels[1]}`],
           ["Undo", "undo"],
           ["End", "end match"]
         ].map(([label, command]) => (
@@ -1083,19 +1142,19 @@ function LiveMatchScreen({
       <div className="point-actions">
         <button className="match-action primary" onClick={() => onPoint(0)}>
           <span className="action-icon"><Plus size={26} /></span>
-          <span className="action-label">Point {compactSideLabels[0]}</span>
+          <span className="action-label">Point {compactSideLabels[0]}{pendingAce === 0 ? " + ace" : ""}</span>
         </button>
         <button className="match-action opponent" onClick={() => onPoint(1)}>
           <span className="action-icon"><Minus size={26} /></span>
-          <span className="action-label">Point {compactSideLabels[1]}</span>
+          <span className="action-label">Point {compactSideLabels[1]}{pendingAce === 1 ? " + ace" : ""}</span>
         </button>
-        <button className="match-action ace" onClick={() => onAce(0)}>
+        <button className={pendingAce === 0 ? "match-action ace active" : "match-action ace"} onClick={() => onAceTag(0)}>
           <span className="action-icon"><Zap size={24} /></span>
-          <span className="action-label">Ace {compactSideLabels[0]}</span>
+          <span className="action-label">{pendingAce === 0 ? "Ace tagged" : `Tag ace ${compactSideLabels[0]}`}</span>
         </button>
-        <button className="match-action ace opponent" onClick={() => onAce(1)}>
+        <button className={pendingAce === 1 ? "match-action ace opponent active" : "match-action ace opponent"} onClick={() => onAceTag(1)}>
           <span className="action-icon"><Zap size={24} /></span>
-          <span className="action-label">Ace {compactSideLabels[1]}</span>
+          <span className="action-label">{pendingAce === 1 ? "Ace tagged" : `Tag ace ${compactSideLabels[1]}`}</span>
         </button>
         <button className="match-action" onClick={onUndo}>
           <span className="action-icon"><RotateCcw size={24} /></span>
@@ -1187,7 +1246,7 @@ function CompleteScreen({
         <StatBalance label="Winners" values={matchStats.winners} />
         <StatBalance label="Unforced Errors" values={matchStats.unforcedErrors} />
         {!hasTrackedStats(matchStats) && (
-          <p className="save-status">Only scored points were tracked. Use Ace during the match to record ace stats.</p>
+          <p className="save-status">Only scored points were tracked. Tag an ace first, then tap that player's point to record ace stats.</p>
         )}
       </div>
 
@@ -2490,7 +2549,7 @@ function BottomNav({ active, isAdmin, onNavigate }: { active: Screen; isAdmin: b
     : navItems;
 
   return (
-    <nav className="bottom-nav">
+    <nav className="bottom-nav" style={{ gridTemplateColumns: `repeat(${visibleItems.length}, minmax(0, 1fr))` }}>
       {visibleItems.map(({ screen, label, icon: Icon }) => (
         <button className={active === screen ? "active" : ""} key={screen} onClick={() => onNavigate(screen)}>
           <Icon size={20} />
@@ -2691,6 +2750,10 @@ function formatDuration(milliseconds: number) {
 
 function incrementPair(pair: [number, number], player: 0 | 1): [number, number] {
   return player === 0 ? [pair[0] + 1, pair[1]] : [pair[0], pair[1] + 1];
+}
+
+function decrementPair(pair: [number, number], player: 0 | 1): [number, number] {
+  return player === 0 ? [Math.max(0, pair[0] - 1), pair[1]] : [pair[0], Math.max(0, pair[1] - 1)];
 }
 
 function hasTrackedStats(stats: MatchStatsInput) {

@@ -4578,13 +4578,40 @@ h1,
 
 .match-setup-hero {
   display: grid;
-  justify-items: center;
   gap: 10px;
   padding: 10px 0 8px;
   text-align: center;
 }
 
+.setup-hero-top {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.setup-hero-top .eyebrow {
+  margin: 0;
+}
+
+.setup-exit-button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+  box-shadow: inset 0 0 0 1px rgba(38, 54, 31, 0.08);
+}
+
 .match-setup-hero h1 {
+  justify-self: center;
   max-width: none;
   font-size: clamp(2.45rem, 12vw, 3.45rem);
   line-height: 1;
@@ -6312,5 +6339,351 @@ body,
     grid-row: span 2;
     height: 144px;
     min-height: 144px;
+  }
+}
+
+/* Final app-wide overlap guard: cards contain their controls and sections keep real gaps. */
+.screen.content {
+  gap: clamp(14px, 2.4vh, 22px);
+}
+
+.screen > *,
+.section-row > *,
+.topbar > *,
+.match-status > *,
+.timer-row > *,
+.button-pair > *,
+.account-actions > *,
+.player-actions > * {
+  min-width: 0;
+}
+
+.info-card,
+.soft-card,
+.progress-card,
+.recent-match-card,
+.feature-card,
+.score-card,
+.set-table,
+.highlight-card,
+.player-row,
+.metric,
+.flat-section,
+.account-card,
+.login-card,
+.generated-share-card,
+.gps-card,
+.distance-control-card,
+.ladder-card,
+.pro-card,
+.feedback-card,
+.challenge-card,
+.admin-create-card,
+.admin-user-card,
+.match-stats,
+.complete-score,
+.achievement-card,
+.empty-state {
+  overflow: hidden;
+}
+
+.section-row {
+  flex-wrap: wrap;
+}
+
+.button-pair,
+.account-actions,
+.player-actions {
+  align-items: stretch;
+}
+
+.button-pair > *,
+.account-actions > *,
+.player-actions > *,
+.ghost-button,
+.hero-action,
+.feature-card button {
+  max-width: 100%;
+}
+
+.phone-frame.is-live .screen {
+  height: 100%;
+  padding-bottom: max(18px, env(safe-area-inset-bottom, 0px));
+}
+
+.app-shell.is-live-shell {
+  padding: 0;
+}
+
+.phone-frame.is-live .bottom-nav {
+  display: none;
+}
+
+.live-screen .match-action.ace.active .action-icon {
+  background: #17243d;
+  color: #fffef8;
+  box-shadow: 0 0 0 8px rgba(205, 234, 95, 0.24), 0 16px 34px rgba(23, 36, 61, 0.16);
+}
+
+.live-screen .match-action.ace.active .action-label {
+  color: #17243d;
+}
+
+.live-screen .point-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.voice-command-panel {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 420px) {
+  .live-screen .point-actions,
+  .voice-command-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Final live-scoring containment: portrait stays focused, landscape keeps the full console. */
+.phone-frame.is-live .live-screen {
+  grid-template-rows: auto minmax(220px, 1fr) auto auto;
+  gap: clamp(8px, 1.6vh, 12px);
+  overflow-y: auto;
+}
+
+.phone-frame.is-live .live-score-stage {
+  min-height: clamp(220px, 34vh, 320px);
+}
+
+.phone-frame.is-live .live-screen > .set-table,
+.phone-frame.is-live .voice-command-panel {
+  display: none;
+}
+
+.phone-frame.is-live .live-screen .point-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  overflow: visible;
+}
+
+.phone-frame.is-live .live-screen .match-action {
+  min-height: 66px;
+  padding: 9px 6px;
+  border-radius: 20px;
+}
+
+.phone-frame.is-live .live-screen .match-action .action-icon {
+  width: 42px;
+  height: 42px;
+}
+
+.phone-frame.is-live .live-screen .action-label {
+  font-size: 0.66rem;
+  line-height: 1.15;
+}
+
+.phone-frame.is-live .live-remote-row {
+  gap: 10px;
+}
+
+.phone-frame.is-live .live-remote-row span,
+.phone-frame.is-live .live-remote-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 380px) {
+  .phone-frame.is-live .live-screen {
+    gap: 8px;
+  }
+
+  .phone-frame.is-live .live-score-stage {
+    min-height: clamp(190px, 31vh, 250px);
+  }
+
+  .phone-frame.is-live .live-screen .match-action {
+    min-height: 60px;
+    border-radius: 18px;
+  }
+
+  .phone-frame.is-live .live-screen .match-action .action-icon {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (max-width: 420px) {
+  .phone-frame.is-live .match-setup-screen {
+    gap: 12px;
+  }
+
+  .phone-frame.is-live .match-setup-hero {
+    gap: 8px;
+    padding: 8px 0 2px;
+  }
+
+  .phone-frame.is-live .match-setup-hero h1 {
+    font-size: clamp(2rem, 10vw, 2.75rem);
+  }
+
+  .phone-frame.is-live .setup-name-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px clamp(50px, 15vw, 62px);
+  }
+
+  .phone-frame.is-live .swap-sides-button {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 48px;
+    height: 48px;
+    transform: translate(-50%, -50%);
+    grid-column: auto;
+  }
+
+  .phone-frame.is-live .setup-name-card {
+    min-height: 58px;
+    grid-template-columns: minmax(0, 1fr) 20px;
+    gap: 6px;
+    padding: 0 10px;
+  }
+
+  .phone-frame.is-live .setup-name-card input {
+    font-size: 0.9rem;
+  }
+
+  .phone-frame.is-live .setup-toggle-row {
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .phone-frame.is-live .setup-toggle-row label,
+  .phone-frame.is-live .sound-pill {
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 0.78rem;
+  }
+
+  .phone-frame.is-live .setup-choice-section {
+    gap: 10px;
+  }
+
+  .phone-frame.is-live .setup-choice-section h2 {
+    font-size: clamp(1.25rem, 5vw, 1.55rem);
+  }
+
+  .phone-frame.is-live .choice-grid.two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .phone-frame.is-live .choice-card,
+  .phone-frame.is-live .choice-card.compact {
+    min-height: 68px;
+    border-radius: 20px;
+  }
+
+  .phone-frame.is-live .match-start-button {
+    min-height: 54px;
+  }
+}
+
+@media (min-width: 720px) and (orientation: landscape) {
+  .phone-frame.is-live .live-screen {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, min(38vw, 420px));
+    grid-template-rows: auto auto auto auto auto;
+    gap: 10px clamp(10px, 2vw, 18px);
+    padding: clamp(12px, 2.2vw, 22px);
+    overflow: hidden;
+  }
+
+  .phone-frame.is-live .live-command-bar {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .phone-frame.is-live .live-score-stage {
+    grid-column: 1;
+    grid-row: 2 / 6;
+    min-height: 0;
+  }
+
+  .phone-frame.is-live .live-screen > .set-table,
+  .phone-frame.is-live .voice-command-panel {
+    display: grid;
+  }
+
+  .phone-frame.is-live .live-screen > .set-table {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+  }
+
+  .phone-frame.is-live .live-remote-row {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  .phone-frame.is-live .voice-command-panel {
+    grid-column: 2;
+    grid-row: 4;
+  }
+
+  .phone-frame.is-live .live-screen .point-actions {
+    grid-column: 2;
+    grid-row: 5;
+    width: 100%;
+    max-width: 100%;
+    align-self: end;
+  }
+
+  .phone-frame.is-live .live-screen .match-action {
+    min-height: 72px;
+  }
+}
+
+@media (min-width: 720px) and (orientation: landscape) and (max-height: 460px) {
+  .phone-frame.is-live .live-screen {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+    grid-template-rows: auto auto auto auto;
+    gap: 8px;
+    padding: 10px 14px;
+  }
+
+  .phone-frame.is-live .live-score-stage {
+    grid-row: 2 / 5;
+  }
+
+  .phone-frame.is-live .voice-command-panel {
+    display: none;
+  }
+
+  .phone-frame.is-live .live-screen .point-actions {
+    grid-row: 4;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .phone-frame.is-live .live-screen .match-action {
+    min-height: 70px;
+    padding: 6px 4px;
+    border-radius: 18px;
+  }
+
+  .phone-frame.is-live .live-screen .match-action .action-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .phone-frame.is-live .live-screen .action-label {
+    font-size: 0.6rem;
+  }
+
+  .phone-frame.is-live .live-screen > .set-table {
+    max-height: 90px;
+  }
+
+  .phone-frame.is-live .stage-score {
+    font-size: clamp(5rem, 28vh, 8rem);
   }
 }
