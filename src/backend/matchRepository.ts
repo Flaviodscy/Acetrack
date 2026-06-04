@@ -26,26 +26,42 @@ export async function saveMatchRecord(record: MatchRecord) {
 
 export async function listRecentMatchRecords() {
   const db = await getFirebaseDb();
+  const localRecords = readLocalMatches();
 
   if (db) {
-    const { collectionGroup, getDocs, limit, orderBy, query } = await import("firebase/firestore");
-    const snapshot = await getDocs(query(collectionGroup(db, "matches"), orderBy("createdAt", "desc"), limit(10)));
-    return snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })) as MatchRecord[];
+    try {
+      const { collectionGroup, getDocs, limit, orderBy, query } = await import("firebase/firestore");
+      const snapshot = await getDocs(query(collectionGroup(db, "matches"), orderBy("createdAt", "desc"), limit(10)));
+      return mergeMatchRecords(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })) as MatchRecord[], localRecords).slice(0, 10);
+    } catch (error) {
+      console.warn("Firebase match list failed, using local matches.", error);
+    }
   }
 
-  return readLocalMatches();
+  return localRecords;
 }
 
 export async function listUserMatchRecords(userId: string) {
   const db = await getFirebaseDb();
+  const localRecords = readLocalMatches().filter((record) => record.userId === userId);
 
   if (db) {
-    const { collection, getDocs, limit, orderBy, query } = await import("firebase/firestore");
-    const snapshot = await getDocs(query(collection(db, "users", userId, "matches"), orderBy("createdAt", "desc"), limit(25)));
-    return snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })) as MatchRecord[];
+    try {
+      const { collection, getDocs, limit, orderBy, query } = await import("firebase/firestore");
+      const snapshot = await getDocs(query(collection(db, "users", userId, "matches"), orderBy("createdAt", "desc"), limit(25)));
+      return mergeMatchRecords(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })) as MatchRecord[], localRecords).slice(0, 25);
+    } catch (error) {
+      console.warn("Firebase user match list failed, using local matches.", error);
+    }
   }
 
-  return readLocalMatches().filter((record) => record.userId === userId);
+  return localRecords;
+}
+
+function mergeMatchRecords(primary: MatchRecord[], fallback: MatchRecord[]) {
+  const records = new Map<string, MatchRecord>();
+  [...fallback, ...primary].forEach((record) => records.set(record.id, record));
+  return Array.from(records.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 function readLocalMatches(): MatchRecord[] {

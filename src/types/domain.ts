@@ -30,6 +30,13 @@ export type UserProfile = {
   hand: string;
   favoritePro: string;
   skills: Array<[string, number]>;
+  skillVotes?: Record<string, {
+    negative: number;
+    neutral: number;
+    positive: number;
+    score: number;
+    total: number;
+  }>;
   equipment: {
     racket: string;
     headSize: string;
@@ -82,6 +89,11 @@ export type MatchRecord = {
     unforcedErrors: [number, number];
   };
   feedback?: {
+    adjustments: Record<string, -1 | 0 | 1>;
+    bonusPercent: number;
+    tokensUsed: number;
+  };
+  opponentFeedback?: {
     adjustments: Record<string, -1 | 0 | 1>;
     bonusPercent: number;
     tokensUsed: number;

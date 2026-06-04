@@ -20,6 +20,7 @@ export const user: UserProfile = {
     ["Slice", 0],
     ["Movement", 0]
   ],
+  skillVotes: {},
   equipment: {
     racket: "Add racket",
     headSize: "Add head size",

@@ -4,7 +4,14 @@ import type { MatchRecord } from "../types/domain";
 export type MatchStatsInput = MatchRecord["stats"];
 export type MatchFeedbackInput = NonNullable<MatchRecord["feedback"]>;
 
-export function createMatchRecord(match: MatchState, userId: string, durationLabel: string, stats: MatchStatsInput, feedback?: MatchFeedbackInput): MatchRecord {
+export function createMatchRecord(
+  match: MatchState,
+  userId: string,
+  durationLabel: string,
+  stats: MatchStatsInput,
+  feedback?: MatchFeedbackInput,
+  opponentFeedback?: MatchFeedbackInput
+): MatchRecord {
   const winner = match.winner === undefined ? undefined : match.players[match.winner];
 
   return {
@@ -18,6 +25,7 @@ export function createMatchRecord(match: MatchState, userId: string, durationLab
     sets: getCompletedSets(match),
     scoringState: match,
     stats,
-    feedback
+    feedback,
+    opponentFeedback
   };
 }

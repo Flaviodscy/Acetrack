@@ -483,6 +483,7 @@ dt {
 .simple-header h1 {
   max-width: 320px;
   font-size: 2.55rem;
+  line-height: 1.15;
 }
 
 .feature-card {
@@ -5906,6 +5907,21 @@ body,
   font-weight: 900;
 }
 
+.highlights-screen .feature-card {
+  min-height: 184px;
+  overflow: visible;
+}
+
+.filter-row {
+  min-height: 44px;
+}
+
+@media (max-width: 380px) {
+  .highlights-screen .feature-card {
+    min-height: 0;
+  }
+}
+
 .distance-control-card {
   display: grid;
   gap: 12px;
@@ -5985,6 +6001,96 @@ body,
 .earned-points-card span {
   color: var(--muted);
   line-height: 1.35;
+}
+
+.challenge-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 20px;
+  border-radius: 26px;
+  background: linear-gradient(135deg, rgba(205, 234, 95, 0.28), rgba(255, 255, 255, 0.86));
+  box-shadow: 0 20px 48px rgba(70, 83, 55, 0.12);
+}
+
+.challenge-card h2,
+.challenge-card p {
+  margin: 0;
+}
+
+.challenge-card h2 {
+  color: var(--ink);
+  font-size: clamp(1.2rem, 4vw, 1.55rem);
+}
+
+.challenge-card span {
+  color: var(--muted);
+}
+
+.challenge-card .button-pair {
+  grid-column: 1 / -1;
+}
+
+.challenge-banner {
+  position: absolute;
+  left: max(18px, env(safe-area-inset-left, 0px));
+  right: max(18px, env(safe-area-inset-right, 0px));
+  bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+  z-index: 30;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 48px rgba(28, 34, 21, 0.16);
+}
+
+.challenge-banner .portrait {
+  width: 42px;
+  height: 42px;
+}
+
+.challenge-banner strong,
+.challenge-banner span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.challenge-banner strong {
+  color: var(--ink);
+}
+
+.challenge-banner span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.challenge-banner button {
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #cdea5f;
+  color: #233005;
+  font-weight: 850;
+}
+
+.challenge-banner button.quiet,
+.challenge-banner button.close {
+  background: rgba(246, 248, 238, 0.92);
+  color: var(--muted);
+}
+
+.skill span small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 @media (min-width: 1024px) {
@@ -6139,4 +6245,21 @@ body,
     grid-column: 1 / -1;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .challenge-banner {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .challenge-banner button.quiet {
+    display: none;
+  }
+
+  .challenge-banner button.close {
+    padding: 0 10px;
+  }
+}
+
+/* Final heading safety: avoid cropped simple headers on mobile font renderers. */
+.simple-header h1 {
+  line-height: 1.15;
 }

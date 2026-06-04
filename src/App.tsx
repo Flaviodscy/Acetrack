@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
-  Apple,
   ArrowRight,
   Bell,
   Bookmark,
@@ -30,10 +29,8 @@ import {
   Plus,
   Radio,
   RotateCcw,
-  Settings,
   Share2,
   ShieldCheck,
-  SlidersHorizontal,
   Sparkles,
   Star,
   Target,
@@ -94,7 +91,7 @@ type MatchProgression = {
   xp: number;
   xpText: string;
 };
-type SkillFeedback = Record<string, -1 | 0 | 1>;
+type SkillFeedback = Record<string, -1 | 0 | 1 | undefined>;
 type MatchOptions = {
   customNames: boolean;
   scorer: 0 | 1;
@@ -140,6 +137,7 @@ export default function App() {
   const [matchStartedAt, setMatchStartedAt] = usePersistentState<number | undefined>("acetrack:match-started-at", undefined);
   const [matchStats, setMatchStats] = usePersistentState<MatchStatsInput>("acetrack:match-stats", emptyMatchStats);
   const [skillFeedback, setSkillFeedback] = usePersistentState<SkillFeedback>("acetrack:skill-feedback", {});
+  const [opponentSkillFeedback, setOpponentSkillFeedback] = usePersistentState<SkillFeedback>("acetrack:opponent-skill-feedback", {});
   const [activeFilter, setActiveFilter] = usePersistentState("acetrack:highlight-filter", "All");
   const [socialTab, setSocialTab] = usePersistentState("acetrack:social-tab", "Nearby");
   const [saveStatus, setSaveStatus] = useState("");
@@ -147,6 +145,8 @@ export default function App() {
   const [matchRecords, setMatchRecords] = useState<MatchRecord[]>([]);
   const [matchRecordsStatus, setMatchRecordsStatus] = useState("No saved matches yet");
   const [appMessage, setAppMessage] = useState("");
+  const [incomingActions, setIncomingActions] = useState<SocialAction[]>([]);
+  const [challengeBannerDismissed, setChallengeBannerDismissed] = useState(false);
   const [accountStatus, setAccountStatus] = useState("Checking account...");
   const [authPhase, setAuthPhase] = useState<AuthPhase>("loading");
   const [appUser, setAppUser] = useState<AppUser | undefined>();
@@ -162,6 +162,7 @@ export default function App() {
   const winnerName = match.winner !== undefined ? match.players[match.winner] : "";
   const finalScore = getFinalScore(match) || getLiveScoreSummary(match);
   const isAdmin = appUser?.email?.toLowerCase() === ADMIN_EMAIL;
+  const incomingChallenges = incomingActions.filter((action) => action.type === "challenge");
 
   useEffect(() => {
     let isMounted = true;
@@ -208,10 +209,12 @@ export default function App() {
     if (!appUser) {
       setMatchRecords([]);
       setMatchRecordsStatus("Sign in to load saved matches");
+      setIncomingActions([]);
       return;
     }
 
     refreshMatchRecords(appUser.id);
+    refreshIncomingActions(appUser.id);
   }, [appUser]);
 
   useEffect(() => {
@@ -246,6 +249,16 @@ export default function App() {
       console.warn("Match records failed to load.", error);
       setMatchRecords([]);
       setMatchRecordsStatus(getMatchRecordsErrorMessage(error));
+    }
+  }
+
+  async function refreshIncomingActions(userId: string) {
+    try {
+      const actions = await listIncomingSocialActions(userId);
+      setIncomingActions(actions);
+      if (actions.some((action) => action.type === "challenge")) setChallengeBannerDismissed(false);
+    } catch (error) {
+      console.warn("Incoming social actions failed to load.", error);
     }
   }
 
@@ -313,6 +326,23 @@ export default function App() {
     setScreen("live");
   }
 
+  async function acceptIncomingAction(action: SocialAction) {
+    await updateSocialActionStatus(action, "accepted");
+    setIncomingActions((current) => current.filter((item) => item.id !== action.id));
+    if (action.type === "challenge") {
+      startChallenge(action.fromProfile.name);
+      showMessage(`Challenge accepted from ${action.fromProfile.name}`);
+    } else {
+      showMessage(`Poke answered`);
+    }
+  }
+
+  async function dismissIncomingAction(action: SocialAction) {
+    await updateSocialActionStatus(action, "dismissed");
+    setIncomingActions((current) => current.filter((item) => item.id !== action.id));
+    showMessage(`${action.type === "challenge" ? "Challenge" : "Poke"} dismissed`);
+  }
+
   function beginMatch(options: MatchOptions) {
     const normalizedOptions = normalizeMatchOptions(options, profile.name);
     const nextMatch = createMatch(getMatchSideNames(normalizedOptions));
@@ -322,6 +352,7 @@ export default function App() {
     setMatchStartedAt(Date.now());
     setMatchStats(emptyMatchStats);
     setSkillFeedback({});
+    setOpponentSkillFeedback({});
     setMatchMode("playing");
     setSaveStatus("");
     setScreen("live");
@@ -397,6 +428,14 @@ export default function App() {
       return;
     }
     if (command.includes("ace")) {
+      if (command.includes("opponent") || command.includes("player two") || command.includes("their") || command.includes("them") || commandMatchesSide(command, match.players[1])) {
+        addPoint(1, "ace");
+        return;
+      }
+      if (command.includes("me") || command.includes("player one") || commandMatchesSide(command, match.players[0])) {
+        addPoint(0, "ace");
+        return;
+      }
       addPoint(match.server, "ace");
       return;
     }
@@ -415,27 +454,43 @@ export default function App() {
     setAppUser(appUser);
     setAccountStatus(formatAccountStatus(appUser));
     const feedback = createFeedbackSummary(skillFeedback);
-    const record = createMatchRecord(match, appUser.id, elapsedMatchTime, matchStats, feedback);
+    const opponentFeedback = createFeedbackSummary(opponentSkillFeedback);
+    const record = createMatchRecord(match, appUser.id, elapsedMatchTime, matchStats, feedback, opponentFeedback);
     const result = await saveMatchRecord(record);
     const nextRecords = [record, ...matchRecords.filter((item) => item.id !== record.id)].slice(0, 25);
     setMatchRecords(nextRecords);
     const profileWithFeedback = applySkillFeedback(profile, skillFeedback);
-    setProfile(profileWithFeedback);
-    await saveUserProfile(appUser.id, applyMatchProgression(profileWithFeedback, getMatchProgression(nextRecords))).catch((error) => {
+    const nextProfile = applyMatchProgression(profileWithFeedback, getMatchProgression(nextRecords));
+    setProfile(nextProfile);
+    await saveUserProfile(appUser.id, nextProfile).catch((error) => {
       console.warn("Could not persist earned match points.", error);
     });
     setMatchRecordsStatus("Match saved");
     setSkillFeedback({});
+    setOpponentSkillFeedback({});
     setSaveStatus(result.mode === "firebase" ? `Saved to Firebase · +${calculateMatchPoints(record)} pts` : `Saved locally · +${calculateMatchPoints(record)} pts`);
   }
 
-  function setOpponentSkillFeedback(skill: string, value: -1 | 0 | 1) {
+  function setReceivedSkillFeedback(skill: string, value: -1 | 0 | 1 | undefined) {
     setSkillFeedback((current) => {
       const next = { ...current, [skill]: value };
-      if (value === 0) delete next[skill];
+      if (value === undefined) delete next[skill];
       const tokensUsed = getFeedbackTokensUsed(next);
       if (tokensUsed > 5) {
         showMessage("Feedback has 5 tokens max");
+        return current;
+      }
+      return next;
+    });
+  }
+
+  function setOpponentMatchSkillFeedback(skill: string, value: -1 | 0 | 1 | undefined) {
+    setOpponentSkillFeedback((current) => {
+      const next = { ...current, [skill]: value };
+      if (value === undefined) delete next[skill];
+      const tokensUsed = getFeedbackTokensUsed(next);
+      if (tokensUsed > 5) {
+        showMessage("Opponent feedback has 5 tokens max");
         return current;
       }
       return next;
@@ -544,10 +599,13 @@ export default function App() {
         <CourtLines />
         {screen === "home" && (
           <HomeScreen
+            incomingChallenges={incomingChallenges}
             matchRecords={matchRecords}
             matchRecordsStatus={matchRecordsStatus}
             profile={displayProfile}
             onAction={showMessage}
+            onAcceptChallenge={acceptIncomingAction}
+            onDismissChallenge={dismissIncomingAction}
             onNavigate={setScreen}
             onStartMatch={startNewMatch}
           />
@@ -574,7 +632,7 @@ export default function App() {
             elapsedTime={elapsedMatchTime}
             onAction={showMessage}
             onPoint={addPoint}
-            onAce={() => addPoint(match.server, "ace")}
+            onAce={(player) => addPoint(player, "ace")}
             onSoundToggle={toggleSound}
             onUndo={() => {
               setMatch(undoPoint(match));
@@ -597,6 +655,7 @@ export default function App() {
             backendMode={getBackendMode()}
             finalScore={finalScore}
             feedback={skillFeedback}
+            opponentFeedback={opponentSkillFeedback}
             matchStats={matchStats}
             playerNames={match.players}
             profile={displayProfile}
@@ -606,7 +665,8 @@ export default function App() {
             winnerName={winnerName}
             onNavigate={setScreen}
             onSave={saveCurrentMatch}
-            onSkillFeedback={setOpponentSkillFeedback}
+            onOpponentSkillFeedback={setOpponentMatchSkillFeedback}
+            onSkillFeedback={setReceivedSkillFeedback}
           />
         )}
         {screen === "highlights" && (
@@ -627,6 +687,7 @@ export default function App() {
             profile={displayProfile}
             onAction={showMessage}
             onStartChallenge={startChallenge}
+            onSocialChanged={() => appUser && refreshIncomingActions(appUser.id)}
             onTab={setSocialTab}
           />
         )}
@@ -662,6 +723,14 @@ export default function App() {
           />
         )}
         {screen === "admin" && isAdmin && <AdminScreen onAction={showMessage} />}
+        {incomingChallenges.length > 0 && !challengeBannerDismissed && (
+          <ChallengeBanner
+            action={incomingChallenges[0]}
+            onAccept={acceptIncomingAction}
+            onClose={() => setChallengeBannerDismissed(true)}
+            onDismiss={dismissIncomingAction}
+          />
+        )}
         <BottomNav active={screen} isAdmin={isAdmin} onNavigate={setScreen} />
         {appMessage && <div className="toast">{appMessage}</div>}
       </div>
@@ -670,17 +739,23 @@ export default function App() {
 }
 
 function HomeScreen({
+  incomingChallenges,
   matchRecords,
   matchRecordsStatus,
   profile,
   onAction,
+  onAcceptChallenge,
+  onDismissChallenge,
   onNavigate,
   onStartMatch
 }: {
+  incomingChallenges: SocialAction[];
   matchRecords: MatchRecord[];
   matchRecordsStatus: string;
   profile: UserProfile;
   onAction: (message: string) => void;
+  onAcceptChallenge: (action: SocialAction) => void | Promise<void>;
+  onDismissChallenge: (action: SocialAction) => void | Promise<void>;
   onNavigate: (screen: Screen) => void;
   onStartMatch: () => void;
 }) {
@@ -695,15 +770,30 @@ function HomeScreen({
           <h1>Play smarter. Every point counts.</h1>
           <p className="hero-copy">Connect, compete, and improve your game.</p>
         </div>
-        <button className="icon-button" aria-label="Notifications" onClick={() => onAction("No new notifications")}><Bell size={21} /></button>
+        <button
+          className="icon-button"
+          aria-label="Notifications"
+          onClick={() => onAction(incomingChallenges.length ? `${incomingChallenges.length} pending challenge${incomingChallenges.length === 1 ? "" : "s"}` : "No new notifications")}
+        >
+          <Bell size={21} />
+        </button>
       </header>
 
       <h2 className="section-title">Get started</h2>
       <div className="start-grid">
         <InfoCard icon={Play} title="Start Match" value="Begin scoring" onClick={onStartMatch} />
         <InfoCard icon={Users} title="Quick Challenge" value="Find players" onClick={() => onNavigate("social")} />
-        <InfoCard icon={Apple} title="Watch Connected" value="Ready" onClick={() => onAction("Watch companion is ready")} />
+        <InfoCard icon={Share2} title="Match Cards" value="Share score" onClick={() => onNavigate("highlights")} />
       </div>
+
+      {incomingChallenges.length > 0 && (
+        <ChallengeInboxCard
+          action={incomingChallenges[0]}
+          count={incomingChallenges.length}
+          onAccept={onAcceptChallenge}
+          onDismiss={onDismissChallenge}
+        />
+      )}
 
       <article className="recent-match-card">
         <div className="section-row">
@@ -793,7 +883,6 @@ function MatchSetupScreen({
       <header className="match-setup-hero">
         <p className="eyebrow"><span className="status-dot" /> New Match</p>
         <h1>Set the court.</h1>
-        <button className="intro-button" onClick={() => onAction("Intro video coming soon")}><Play size={16} /> Watch intro video</button>
       </header>
 
       <div className="setup-name-grid">
@@ -898,7 +987,7 @@ function LiveMatchScreen({
   elapsedTime: string;
   matchWinner?: 0 | 1;
   onAction: (message: string) => void;
-  onAce: () => void;
+  onAce: (player: 0 | 1) => void;
   onPoint: (player: 0 | 1) => void;
   onSoundToggle: () => void;
   onUndo: () => void;
@@ -921,7 +1010,7 @@ function LiveMatchScreen({
           <strong>Singles Match</strong>
         </div>
         <div className="live-top-actions">
-          <span><Apple size={16} /> Watch Connected</span>
+          <span><Radio size={16} /> Voice scoring</span>
           <button onClick={onNewMatch}><Play size={14} /> New</button>
           <button onClick={onExit}><LogOut size={14} /> Exit</button>
           <button className="danger" onClick={onEndMatch}><Trophy size={14} /> End</button>
@@ -971,9 +1060,13 @@ function LiveMatchScreen({
           <span className="action-icon"><Minus size={26} /></span>
           <span className="action-label">Point {compactSideLabels[1]}</span>
         </button>
-        <button className="match-action ace" onClick={onAce}>
+        <button className="match-action ace" onClick={() => onAce(0)}>
           <span className="action-icon"><Zap size={24} /></span>
-          <span className="action-label">Ace {compactSideLabels[server]}</span>
+          <span className="action-label">Ace {compactSideLabels[0]}</span>
+        </button>
+        <button className="match-action ace opponent" onClick={() => onAce(1)}>
+          <span className="action-icon"><Zap size={24} /></span>
+          <span className="action-label">Ace {compactSideLabels[1]}</span>
         </button>
         <button className="match-action" onClick={onUndo}>
           <span className="action-icon"><RotateCcw size={24} /></span>
@@ -987,10 +1080,6 @@ function LiveMatchScreen({
           <span className="action-icon">{options.soundEnabled ? <Volume2 size={24} /> : <VolumeX size={24} />}</span>
           <span className="action-label">Sound</span>
         </button>
-        <button className="match-action utility" onClick={() => onAction("Remote setup ready")}>
-          <span className="action-icon"><Settings size={24} /></span>
-          <span className="action-label">Remote</span>
-        </button>
       </div>
 
       {matchWinner !== undefined && <button className="ghost-button" onClick={onComplete}>View recap</button>}
@@ -1002,6 +1091,7 @@ function CompleteScreen({
   backendMode,
   elapsedTime,
   feedback,
+  opponentFeedback,
   winnerName,
   finalScore,
   matchStats,
@@ -1011,11 +1101,13 @@ function CompleteScreen({
   saveStatus,
   onNavigate,
   onSave,
+  onOpponentSkillFeedback,
   onSkillFeedback
 }: {
   backendMode: "local" | "firebase";
   elapsedTime: string;
   feedback: SkillFeedback;
+  opponentFeedback: SkillFeedback;
   winnerName: string;
   finalScore: string;
   matchStats: MatchStatsInput;
@@ -1025,9 +1117,11 @@ function CompleteScreen({
   saveStatus: string;
   onNavigate: (screen: Screen) => void;
   onSave: () => void;
-  onSkillFeedback: (skill: string, value: -1 | 0 | 1) => void;
+  onOpponentSkillFeedback: (skill: string, value: -1 | 0 | 1 | undefined) => void;
+  onSkillFeedback: (skill: string, value: -1 | 0 | 1 | undefined) => void;
 }) {
   const feedbackSummary = createFeedbackSummary(feedback);
+  const opponentFeedbackSummary = createFeedbackSummary(opponentFeedback);
   const estimatedPoints = calculateMatchPointsFromData(
     sets,
     winnerName === playerNames[0] ? 0 : winnerName === playerNames[1] ? 1 : undefined,
@@ -1068,27 +1162,24 @@ function CompleteScreen({
         )}
       </div>
 
-      <article className="feedback-card">
-        <div className="section-row">
-          <div>
-            <p className="eyebrow">Opponent feedback</p>
-            <h2>Skill check</h2>
-          </div>
-          <span>{feedbackSummary.tokensUsed}/5 tokens · +{feedbackSummary.bonusPercent}%</span>
-        </div>
-        <p>Ask your opponent to use up to five tokens. Each non-zero vote adds a 1% match-points bonus.</p>
-        <div className="feedback-skill-grid">
-          {profile.skills.map(([skill, value]) => (
-            <div className="feedback-skill-row" key={skill}>
-              <span>{skill}</span>
-              <strong>{(getAdjustedSkillValue(value, feedback[skill]) / 10).toFixed(1)}</strong>
-              <button className={feedback[skill] === -1 ? "active negative" : ""} aria-label={`Decrease ${skill}`} onClick={() => onSkillFeedback(skill, feedback[skill] === -1 ? 0 : -1)}><Minus size={16} /></button>
-              <button className={feedback[skill] === undefined ? "active neutral" : ""} aria-label={`Keep ${skill}`} onClick={() => onSkillFeedback(skill, 0)}>0</button>
-              <button className={feedback[skill] === 1 ? "active positive" : ""} aria-label={`Increase ${skill}`} onClick={() => onSkillFeedback(skill, feedback[skill] === 1 ? 0 : 1)}><Plus size={16} /></button>
-            </div>
-          ))}
-        </div>
-      </article>
+      <FeedbackCard
+        feedback={feedback}
+        skills={profile.skills}
+        subtitle="Have your opponent use up to five tokens for your skills. Each vote adds a 1% match-points bonus."
+        summary={feedbackSummary}
+        title={`Opponent votes for ${playerNames[0]}`}
+        onChange={onSkillFeedback}
+      />
+
+      <FeedbackCard
+        feedback={opponentFeedback}
+        skills={profile.skills.map(([skill]) => [skill, 0] as [string, number])}
+        showSkillValue={false}
+        subtitle={`Your vote for ${playerNames[1]} is saved with the match card. It does not change your own skills.`}
+        summary={opponentFeedbackSummary}
+        title={`You vote for ${playerNames[1]}`}
+        onChange={onOpponentSkillFeedback}
+      />
 
       <div className="stack">
         <button className="hero-action compact" onClick={onSave}><Bookmark size={20} /> Save Match</button>
@@ -1161,7 +1252,7 @@ function HighlightsScreen({
           <img alt="Generated AceTrack match share card" src={shareCard} />
           <div className="button-pair">
             <a className="ghost-button" download="acetrack-share-card.svg" href={shareCard}><Download size={18} /> Download</a>
-            <button className="hero-action compact" onClick={() => copyShareCardLink(shareCard, onAction)}><Share2 size={18} /> Copy Card</button>
+            <button className="hero-action compact" onClick={() => shareMatchCard(shareCard, onAction)}><Share2 size={18} /> Share Card</button>
           </div>
         </article>
       )}
@@ -1175,7 +1266,6 @@ function HighlightsScreen({
             {filter.label}<span>{filter.count}</span>
           </button>
         ))}
-        <button className="filter-icon" aria-label="Match filters" onClick={() => onAction("Match filters ready")}><SlidersHorizontal size={20} /></button>
       </div>
       <div className="highlight-grid">
         {filteredRecords.map((record) => (
@@ -1190,7 +1280,6 @@ function HighlightsScreen({
             </div>
             <div className="card-icons">
               <button aria-label={`Share ${record.players[0]} vs ${record.players[1]}`} onClick={() => { setShareCard(createShareCardSvg(profile, record)); onAction("Share card generated"); }}><Share2 size={18} /></button>
-              <button aria-label={`Options for ${record.players[0]} vs ${record.players[1]}`} onClick={() => onAction("Match options ready")}><MoreHorizontal size={18} /></button>
             </div>
           </article>
         ))}
@@ -1212,6 +1301,7 @@ function SocialScreen({
   profile,
   onAction,
   onStartChallenge,
+  onSocialChanged,
   onTab
 }: {
   activeTab: string;
@@ -1219,6 +1309,7 @@ function SocialScreen({
   profile: UserProfile;
   onAction: (message: string) => void;
   onStartChallenge: (playerName: string) => void;
+  onSocialChanged: () => void;
   onTab: (tab: string) => void;
 }) {
   const [nearbyStatus, setNearbyStatus] = useState("Share GPS to find friends nearby");
@@ -1326,30 +1417,35 @@ function SocialScreen({
     const activeUser = appUser ?? await getCurrentAppUser();
     await sendFriendRequest(activeUser.id, profile, player.id, nearbyPlayerToSocialProfile(player));
     onAction(`Friend request sent to ${player.name}`);
+    onSocialChanged();
   }
 
   async function challengePlayer(player: NearbyPlayer | SocialProfileSnapshot, playerId: string) {
     const activeUser = appUser ?? await getCurrentAppUser();
     await sendSocialAction("challenge", activeUser.id, profile, playerId, "distance" in player ? nearbyPlayerToSocialProfile(player) : player);
     onAction(`Challenge sent to ${player.name}`);
+    onSocialChanged();
   }
 
   async function pokePlayer(player: SocialProfileSnapshot, playerId: string) {
     const activeUser = appUser ?? await getCurrentAppUser();
     await sendSocialAction("poke", activeUser.id, profile, playerId, player);
     onAction(`Poked ${player.name}`);
+    onSocialChanged();
   }
 
   async function acceptRequest(request: FriendRequest) {
     await acceptFriendRequest(request, profile);
     onAction(`${request.fromProfile.name} added`);
     await loadSocialConnections();
+    onSocialChanged();
   }
 
   async function declineRequest(request: FriendRequest) {
     await declineFriendRequest(request);
     onAction(`${request.fromProfile.name} declined`);
     await loadSocialConnections();
+    onSocialChanged();
   }
 
   async function acceptAction(action: SocialAction) {
@@ -1357,12 +1453,14 @@ function SocialScreen({
     onAction(action.type === "challenge" ? `Challenge accepted from ${action.fromProfile.name}` : `Poke answered`);
     if (action.type === "challenge") onStartChallenge(action.fromProfile.name);
     await loadSocialConnections();
+    onSocialChanged();
   }
 
   async function dismissAction(action: SocialAction) {
     await updateSocialActionStatus(action, "dismissed");
     onAction(`${action.type === "challenge" ? "Challenge" : "Poke"} dismissed`);
     await loadSocialConnections();
+    onSocialChanged();
   }
 
   return (
@@ -1686,13 +1784,13 @@ function ProfileScreen({
       <article className="flat-section">
         <div className="section-row">
           <h2>Skills</h2>
-          <button className="text-button" onClick={() => onAction("Full skills view coming next")}>View all</button>
+          <button className="text-button" onClick={() => setIsEditing(true)}>Edit</button>
         </div>
         <div className="skill-list">
           {profile.skills.map(([skill, value]) => (
             <div className="skill" key={skill}>
               <Dumbbell size={20} />
-              <span>{skill}</span>
+              <span>{skill}<small>{formatSkillVoteSummary(profile.skillVotes?.[skill])}</small></span>
               <div><i style={{ width: `${value}%` }} /></div>
               <strong>{Number(value) / 10}</strong>
             </div>
@@ -2147,6 +2245,58 @@ function InfoCard({ icon: Icon, title, value, onClick }: { icon: typeof Home; ti
   );
 }
 
+function ChallengeInboxCard({
+  action,
+  count,
+  onAccept,
+  onDismiss
+}: {
+  action: SocialAction;
+  count: number;
+  onAccept: (action: SocialAction) => void | Promise<void>;
+  onDismiss: (action: SocialAction) => void | Promise<void>;
+}) {
+  return (
+    <article className="challenge-card">
+      <div>
+        <p className="eyebrow"><Trophy size={14} /> Challenge</p>
+        <h2>{action.fromProfile.name} challenged you</h2>
+        <span>{action.fromProfile.rating}{count > 1 ? ` · ${count - 1} more pending` : ""}</span>
+      </div>
+      <Portrait className={action.fromProfile.portrait} initials={action.fromProfile.avatar} />
+      <div className="button-pair">
+        <button className="hero-action compact" onClick={() => onAccept(action)}><Check size={17} /> Accept</button>
+        <button className="ghost-button" onClick={() => onDismiss(action)}><X size={17} /> Dismiss</button>
+      </div>
+    </article>
+  );
+}
+
+function ChallengeBanner({
+  action,
+  onAccept,
+  onClose,
+  onDismiss
+}: {
+  action: SocialAction;
+  onAccept: (action: SocialAction) => void | Promise<void>;
+  onClose: () => void;
+  onDismiss: (action: SocialAction) => void | Promise<void>;
+}) {
+  return (
+    <aside className="challenge-banner" role="dialog" aria-label="Incoming challenge">
+      <Portrait className={action.fromProfile.portrait} initials={action.fromProfile.avatar} />
+      <div>
+        <strong>{action.fromProfile.name} challenged you</strong>
+        <span>{action.fromProfile.rating}</span>
+      </div>
+      <button onClick={() => onAccept(action)}><Check size={16} /> Accept</button>
+      <button className="quiet" onClick={() => onDismiss(action)}><X size={16} /> No</button>
+      <button className="close" aria-label="Close challenge banner" onClick={onClose}><MoreHorizontal size={18} /></button>
+    </aside>
+  );
+}
+
 function EmptyState({
   actionLabel,
   icon: Icon,
@@ -2223,6 +2373,48 @@ function StatBalance({ label, values }: { label: string; values: [number, number
       </div>
       <strong>{values[1]}</strong>
     </div>
+  );
+}
+
+function FeedbackCard({
+  feedback,
+  showSkillValue = true,
+  skills,
+  subtitle,
+  summary,
+  title,
+  onChange
+}: {
+  feedback: SkillFeedback;
+  showSkillValue?: boolean;
+  skills: Array<[string, number]>;
+  subtitle: string;
+  summary: MatchFeedbackInput;
+  title: string;
+  onChange: (skill: string, value: -1 | 0 | 1 | undefined) => void;
+}) {
+  return (
+    <article className="feedback-card">
+      <div className="section-row">
+        <div>
+          <p className="eyebrow">Skill feedback</p>
+          <h2>{title}</h2>
+        </div>
+        <span>{summary.tokensUsed}/5 votes · +{summary.bonusPercent}%</span>
+      </div>
+      <p>{subtitle}</p>
+      <div className="feedback-skill-grid">
+        {skills.map(([skill, value]) => (
+          <div className="feedback-skill-row" key={skill}>
+            <span>{skill}</span>
+            <strong>{showSkillValue ? (getAdjustedSkillValue(value, feedback[skill]) / 10).toFixed(1) : getVoteLabel(feedback[skill])}</strong>
+            <button className={feedback[skill] === -1 ? "active negative" : ""} aria-label={`Decrease ${skill}`} onClick={() => onChange(skill, feedback[skill] === -1 ? undefined : -1)}><Minus size={16} /></button>
+            <button className={feedback[skill] === 0 ? "active neutral" : ""} aria-label={`Keep ${skill}`} onClick={() => onChange(skill, feedback[skill] === 0 ? undefined : 0)}>0</button>
+            <button className={feedback[skill] === 1 ? "active positive" : ""} aria-label={`Increase ${skill}`} onClick={() => onChange(skill, feedback[skill] === 1 ? undefined : 1)}><Plus size={16} /></button>
+          </div>
+        ))}
+      </div>
+    </article>
   );
 }
 
@@ -2572,7 +2764,7 @@ function calculateMatchPointsFromData(
 
 function createFeedbackSummary(feedback: SkillFeedback): MatchFeedbackInput {
   const adjustments = Object.fromEntries(
-    Object.entries(feedback).filter(([, value]) => value === -1 || value === 1)
+    Object.entries(feedback).filter(([, value]) => value === -1 || value === 0 || value === 1)
   ) as Record<string, -1 | 0 | 1>;
   const tokensUsed = getFeedbackTokensUsed(adjustments);
 
@@ -2584,18 +2776,42 @@ function createFeedbackSummary(feedback: SkillFeedback): MatchFeedbackInput {
 }
 
 function getFeedbackTokensUsed(feedback: SkillFeedback) {
-  return Object.values(feedback).filter((value) => value === -1 || value === 1).length;
+  return Object.values(feedback).filter((value) => value === -1 || value === 0 || value === 1).length;
 }
 
 function applySkillFeedback(profile: UserProfile, feedback: SkillFeedback): UserProfile {
   return {
     ...profile,
+    skillVotes: updateSkillVotes(profile.skillVotes, feedback),
     skills: profile.skills.map(([label, value]) => [label, getAdjustedSkillValue(value, feedback[label])] as [string, number])
   };
 }
 
 function getAdjustedSkillValue(value: number, adjustment?: -1 | 0 | 1) {
   return Math.max(0, Math.min(100, value + (adjustment ?? 0) * 10));
+}
+
+function updateSkillVotes(currentVotes: UserProfile["skillVotes"] = {}, feedback: SkillFeedback): UserProfile["skillVotes"] {
+  return Object.entries(feedback).reduce<UserProfile["skillVotes"]>((nextVotes, [skill, vote]) => {
+    if (vote !== -1 && vote !== 0 && vote !== 1) return nextVotes;
+
+    const current = nextVotes?.[skill] ?? { negative: 0, neutral: 0, positive: 0, score: 0, total: 0 };
+    nextVotes![skill] = {
+      negative: current.negative + (vote === -1 ? 1 : 0),
+      neutral: current.neutral + (vote === 0 ? 1 : 0),
+      positive: current.positive + (vote === 1 ? 1 : 0),
+      score: current.score + vote,
+      total: current.total + 1
+    };
+    return nextVotes;
+  }, { ...currentVotes });
+}
+
+function getVoteLabel(vote?: -1 | 0 | 1) {
+  if (vote === -1) return "-1";
+  if (vote === 0) return "0";
+  if (vote === 1) return "+1";
+  return "-";
 }
 
 function applyMatchProgression(profile: UserProfile, progression: MatchProgression): UserProfile {
@@ -2830,6 +3046,12 @@ function getSkillCode(label: string) {
   return code || "SKL";
 }
 
+function formatSkillVoteSummary(vote?: NonNullable<UserProfile["skillVotes"]>[string]) {
+  if (!vote?.total) return "No votes yet";
+  const score = vote.score > 0 ? `+${vote.score}` : String(vote.score);
+  return `${vote.total} vote${vote.total === 1 ? "" : "s"} · ${score}`;
+}
+
 function stripAdminFields(profile: AdminUserProfile): UserProfile {
   const { accountType: _accountType, email: _email, userId: _userId, updatedAt: _updatedAt, ...userProfile } = profile;
   return userProfile;
@@ -2912,8 +3134,21 @@ function createShareCardSvg(profile: UserProfile, record: MatchRecord) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-async function copyShareCardLink(card: string, onAction: (message: string) => void) {
+async function shareMatchCard(card: string, onAction: (message: string) => void) {
   try {
+    const blob = await (await fetch(card)).blob();
+    const file = new File([blob], "acetrack-match-card.svg", { type: "image/svg+xml" });
+    const shareNavigator = navigator as Navigator & {
+      canShare?: (data: { files?: File[] }) => boolean;
+      share?: (data: { files?: File[]; text?: string; title?: string }) => Promise<void>;
+    };
+
+    if (shareNavigator.share && (!shareNavigator.canShare || shareNavigator.canShare({ files: [file] }))) {
+      await shareNavigator.share({ files: [file], title: "AceTrack Match Card", text: "My AceTrack match card" });
+      onAction("Share sheet opened");
+      return;
+    }
+
     await navigator.clipboard.writeText(card);
     onAction("Share card copied");
   } catch {
