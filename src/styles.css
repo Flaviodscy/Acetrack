@@ -9091,3 +9091,509 @@ body,
     bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* App-wide breathing room: every page should feel spacious and readable. */
+.screen.content {
+  gap: clamp(24px, 3vw, 42px);
+}
+
+.home-screen,
+.profile-screen,
+.social-screen,
+.highlights-screen,
+.account-screen,
+.admin-screen,
+.complete-screen {
+  row-gap: clamp(24px, 3vw, 42px);
+}
+
+.simple-header,
+.topbar,
+.celebration,
+.profile-hero,
+.match-setup-hero {
+  margin-bottom: clamp(8px, 1.8vw, 22px);
+}
+
+.section-row {
+  gap: clamp(12px, 2vw, 22px);
+  margin-bottom: 10px;
+}
+
+.section-row h2,
+.section-title,
+.list-label {
+  line-height: 1.25;
+}
+
+.hero-copy,
+.simple-header p:not(.eyebrow),
+.complete-screen .celebration p,
+.feature-card p,
+.empty-state p {
+  line-height: 1.55;
+}
+
+.recent-match-card,
+.progress-card,
+.feature-card,
+.generated-share-card,
+.gps-card,
+.distance-control-card,
+.ladder-card,
+.flat-section,
+.account-card,
+.login-card,
+.match-stats,
+.feedback-card,
+.complete-score,
+.admin-editor,
+.admin-create-card,
+.challenge-card,
+.empty-state,
+.home-area-card,
+.edit-profile-card,
+.skill-editor-list {
+  padding: clamp(20px, 3vw, 30px);
+}
+
+.start-grid,
+.highlight-grid,
+.player-list,
+.request-list,
+.reward-list,
+.skill-list,
+.equipment-list,
+.admin-list,
+.feedback-skill-grid {
+  gap: clamp(14px, 2.2vw, 24px);
+}
+
+.player-row,
+.request-row,
+.admin-row,
+.equipment-row,
+.reward-row {
+  padding-top: clamp(14px, 2vw, 22px);
+  padding-bottom: clamp(14px, 2vw, 22px);
+}
+
+.button-pair,
+.account-actions,
+.player-actions,
+.request-actions {
+  gap: clamp(12px, 2vw, 20px);
+}
+
+.tabs,
+.filter-row {
+  gap: 10px;
+}
+
+@media (max-width: 1023px) {
+  .phone-frame:not(.is-live):not(.auth-frame) .screen {
+    padding-top: clamp(28px, 6vw, 54px);
+    padding-left: clamp(18px, 6vw, 56px);
+    padding-right: clamp(18px, 6vw, 56px);
+  }
+
+  .screen.content,
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen,
+  .admin-screen,
+  .complete-screen {
+    gap: clamp(24px, 5vw, 38px);
+    row-gap: clamp(24px, 5vw, 38px);
+  }
+
+  .recent-match-card,
+  .progress-card,
+  .feature-card,
+  .generated-share-card,
+  .gps-card,
+  .distance-control-card,
+  .ladder-card,
+  .flat-section,
+  .account-card,
+  .login-card,
+  .match-stats,
+  .feedback-card,
+  .complete-score,
+  .admin-editor,
+  .admin-create-card,
+  .challenge-card,
+  .empty-state,
+  .home-area-card,
+  .edit-profile-card,
+  .skill-editor-list {
+    padding: clamp(20px, 5vw, 28px);
+  }
+
+  .section-row {
+    margin-bottom: 12px;
+  }
+}
+
+@media (min-width: 601px) and (max-width: 700px) {
+  .home-screen .start-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .home-screen .start-grid .info-card:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 600px) {
+  .phone-frame:not(.is-live):not(.auth-frame) .screen {
+    padding-top: clamp(22px, 6vw, 34px);
+    padding-left: clamp(16px, 5vw, 22px);
+    padding-right: clamp(16px, 5vw, 22px);
+  }
+
+  .recent-match-card,
+  .progress-card,
+  .feature-card,
+  .generated-share-card,
+  .gps-card,
+  .distance-control-card,
+  .ladder-card,
+  .flat-section,
+  .account-card,
+  .login-card,
+  .match-stats,
+  .feedback-card,
+  .complete-score,
+  .admin-editor,
+  .admin-create-card,
+  .challenge-card,
+  .empty-state,
+  .home-area-card,
+  .edit-profile-card,
+  .skill-editor-list {
+    padding: 20px;
+  }
+
+  .home-screen .start-grid {
+    gap: 16px;
+  }
+}
+
+/* Deep spacing guarantee: content should never feel stacked, clipped, or edge-tight. */
+.screen.content {
+  display: flex;
+  flex-direction: column;
+}
+
+.phone-frame.is-live .live-screen {
+  display: grid;
+}
+
+.screen.content > * {
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.home-screen > *,
+.profile-screen > *,
+.social-screen > *,
+.highlights-screen > *,
+.account-screen > *,
+.admin-screen > *,
+.complete-screen > * {
+  margin-block: 0;
+}
+
+.simple-header,
+.topbar,
+.profile-hero,
+.match-setup-hero,
+.celebration {
+  padding-block: clamp(2px, 1vw, 8px);
+}
+
+.simple-header p:last-child,
+.topbar .hero-copy,
+.celebration p:last-child {
+  margin-bottom: 0;
+}
+
+.start-grid,
+.highlight-grid,
+.player-list,
+.request-list,
+.reward-list,
+.skill-list,
+.equipment-list,
+.admin-list,
+.feedback-skill-grid,
+.edit-grid,
+.voice-example-row,
+.voice-choice-row {
+  row-gap: clamp(16px, 2.4vw, 26px);
+}
+
+.feature-card,
+.generated-share-card,
+.gps-card,
+.distance-control-card,
+.ladder-card,
+.flat-section,
+.account-card,
+.login-card,
+.match-stats,
+.feedback-card,
+.complete-score,
+.admin-editor,
+.admin-create-card,
+.challenge-card,
+.empty-state,
+.home-area-card,
+.edit-profile-card,
+.skill-editor-list,
+.pro-card {
+  display: grid;
+  gap: clamp(14px, 2vw, 24px);
+}
+
+.recent-match-card {
+  display: grid;
+  gap: clamp(16px, 2.2vw, 24px);
+}
+
+.recent-match-card .section-row,
+.flat-section .section-row,
+.generated-share-card .section-row,
+.admin-editor .section-row,
+.admin-create-card .section-row,
+.feedback-card .section-row,
+.match-stats .section-row {
+  margin-bottom: 0;
+}
+
+.feature-card > *,
+.generated-share-card > *,
+.gps-card > *,
+.distance-control-card > *,
+.ladder-card > *,
+.flat-section > *,
+.account-card > *,
+.login-card > *,
+.match-stats > *,
+.feedback-card > *,
+.complete-score > *,
+.admin-editor > *,
+.admin-create-card > *,
+.challenge-card > *,
+.empty-state > *,
+.home-area-card > *,
+.edit-profile-card > *,
+.skill-editor-list > *,
+.pro-card > *,
+.recent-match-card > * {
+  min-width: 0;
+}
+
+.player-row,
+.request-row,
+.admin-row {
+  gap: clamp(14px, 2vw, 24px);
+}
+
+.player-actions,
+.request-actions,
+.button-pair,
+.account-actions {
+  flex-wrap: wrap;
+}
+
+.player-actions > *,
+.request-actions > *,
+.button-pair > *,
+.account-actions > * {
+  min-width: min(100%, 132px);
+}
+
+.tabs,
+.filter-row {
+  padding-bottom: 4px;
+  row-gap: 10px;
+}
+
+.tabs button,
+.filter-row button {
+  min-height: 44px;
+}
+
+.edit-grid label,
+.photo-field,
+.skill-editor-row,
+.feedback-skill-row {
+  gap: clamp(10px, 1.8vw, 18px);
+}
+
+.skill-editor-row,
+.feedback-skill-row {
+  min-height: 54px;
+}
+
+.equipment-row,
+.reward-row {
+  gap: 14px;
+}
+
+.set-table {
+  margin-block: 0;
+}
+
+.generated-share-card img,
+.highlights-screen .generated-share-card img {
+  width: 100%;
+  max-height: none;
+}
+
+.save-status,
+.social-status,
+.auth-help,
+.list-label {
+  line-height: 1.5;
+}
+
+.empty-state {
+  min-height: 180px;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+@media (max-width: 1023px) {
+  .screen.content {
+    gap: clamp(28px, 5vw, 44px);
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen {
+    padding-bottom: clamp(30px, 6vw, 52px) !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .feature-card,
+  .generated-share-card,
+  .gps-card,
+  .distance-control-card,
+  .ladder-card,
+  .flat-section,
+  .account-card,
+  .login-card,
+  .match-stats,
+  .feedback-card,
+  .complete-score,
+  .admin-editor,
+  .admin-create-card,
+  .challenge-card,
+  .empty-state,
+  .home-area-card,
+  .edit-profile-card,
+  .skill-editor-list,
+  .pro-card,
+  .recent-match-card {
+    gap: 18px;
+  }
+
+  .section-row {
+    align-items: flex-start;
+  }
+
+  .section-row > button,
+  .section-row > .text-button {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 430px) {
+  .screen.content {
+    gap: 28px;
+  }
+
+  .feature-card,
+  .generated-share-card,
+  .gps-card,
+  .distance-control-card,
+  .ladder-card,
+  .flat-section,
+  .account-card,
+  .login-card,
+  .match-stats,
+  .feedback-card,
+  .complete-score,
+  .admin-editor,
+  .admin-create-card,
+  .challenge-card,
+  .empty-state,
+  .home-area-card,
+  .edit-profile-card,
+  .skill-editor-list,
+  .pro-card,
+  .recent-match-card {
+    padding: 22px;
+  }
+
+  .button-pair > *,
+  .account-actions > *,
+  .player-actions > *,
+  .request-actions > * {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Filters must wrap instead of hiding labels off-screen. */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap !important;
+  overflow-x: visible !important;
+  align-items: center;
+}
+
+.filter-row button {
+  flex: 1 1 auto;
+  min-width: max-content;
+}
+
+@media (max-width: 430px) {
+  .filter-row button {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+  }
+}
+
+/* Match setup needs a compact two-side form so Start Match stays reachable. */
+@media (max-width: 430px) {
+  .phone-frame.is-live .match-setup-screen {
+    gap: 12px;
+  }
+
+  .phone-frame.is-live .setup-name-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 10px clamp(46px, 14vw, 58px) !important;
+  }
+
+  .phone-frame.is-live .setup-name-card {
+    min-height: 56px;
+    padding-inline: 10px;
+  }
+
+  .phone-frame.is-live .choice-card,
+  .phone-frame.is-live .choice-card.compact {
+    min-height: 64px;
+    padding: 12px;
+  }
+
+  .phone-frame.is-live .match-start-button {
+    min-height: 54px;
+    margin-top: 0;
+  }
+}
