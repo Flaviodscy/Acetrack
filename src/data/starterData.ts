@@ -6,10 +6,10 @@ export const user: UserProfile = {
   avatar: "PL",
   portrait: "portrait-one",
   location: "Add your club or city",
-  rating: "NTRP 3.5",
-  level: 1,
+  rating: "0 pts",
+  level: 0,
   xp: 0,
-  xpText: "0 / 1,000 XP",
+  xpText: "0 match pts",
   hand: "Add handedness",
   favoritePro: "",
   skills: [
@@ -34,6 +34,6 @@ export const opponent = {
   shortName: "Opponent",
   avatar: "OP",
   portrait: "portrait-two",
-  rating: "NTRP",
-  level: 1
+  rating: "Opponent",
+  level: 0
 };

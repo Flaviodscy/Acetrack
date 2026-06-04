@@ -69,6 +69,16 @@ import "./styles.css";
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account" | "admin";
 type AuthPhase = "loading" | "signed-out" | "signed-in";
 type MatchMode = "setup" | "playing";
+type MatchProgression = {
+  gamesLost: number;
+  gamesWon: number;
+  level: number;
+  losses: number;
+  points: number;
+  wins: number;
+  xp: number;
+  xpText: string;
+};
 type MatchOptions = {
   customNames: boolean;
   scorer: 0 | 1;
@@ -127,6 +137,8 @@ export default function App() {
   const [voiceStatus, setVoiceStatus] = useState("Voice ready");
   const voiceRecognitionRef = useRef<{ start: () => void; stop: () => void; abort?: () => void; onend: (() => void) | null; onerror: ((event: unknown) => void) | null; onresult: ((event: unknown) => void) | null; continuous?: boolean; interimResults?: boolean; lang?: string } | undefined>(undefined);
 
+  const progression = useMemo(() => getMatchProgression(matchRecords), [matchRecords]);
+  const displayProfile = useMemo(() => applyMatchProgression(profile, progression), [profile, progression]);
   const pointDisplay = getPointDisplay(match);
   const sets = getCompletedSets(match);
   const elapsedMatchTime = useElapsedTime(matchStartedAt, matchMode === "playing");
@@ -372,9 +384,27 @@ export default function App() {
     setAccountStatus(formatAccountStatus(appUser));
     const record = createMatchRecord(match, appUser.id, elapsedMatchTime, matchStats);
     const result = await saveMatchRecord(record);
-    setMatchRecords((current) => [record, ...current.filter((item) => item.id !== record.id)].slice(0, 25));
+    const nextRecords = [record, ...matchRecords.filter((item) => item.id !== record.id)].slice(0, 25);
+    setMatchRecords(nextRecords);
+    await saveUserProfile(appUser.id, applyMatchProgression(profile, getMatchProgression(nextRecords))).catch((error) => {
+      console.warn("Could not persist earned match points.", error);
+    });
     setMatchRecordsStatus("Match saved");
     setSaveStatus(result.mode === "firebase" ? "Saved to Firebase" : "Saved locally");
+  }
+
+  async function applyOpponentSkillFeedback(skill: string, delta: -1 | 1) {
+    const nextProfile = {
+      ...profile,
+      skills: profile.skills.map(([label, value]) => (
+        label === skill ? [label, Math.max(0, Math.min(100, value + delta * 10))] as [string, number] : [label, value] as [string, number]
+      ))
+    };
+    setProfile(nextProfile);
+    const activeUser = appUser ?? await getCurrentAppUser();
+    setAppUser(activeUser);
+    await saveUserProfile(activeUser.id, applyMatchProgression(nextProfile, progression));
+    showMessage(`${skill} ${delta > 0 ? "increased" : "decreased"} from feedback`);
   }
 
   async function signInAccount(email: string, password: string) {
@@ -481,7 +511,7 @@ export default function App() {
           <HomeScreen
             matchRecords={matchRecords}
             matchRecordsStatus={matchRecordsStatus}
-            profile={profile}
+            profile={displayProfile}
             onAction={showMessage}
             onNavigate={setScreen}
             onStartMatch={startNewMatch}
@@ -490,7 +520,7 @@ export default function App() {
         {screen === "live" && matchMode === "setup" && (
           <MatchSetupScreen
             options={matchOptions}
-            profileName={profile.name}
+            profileName={displayProfile.name}
             onAction={showMessage}
             onStart={beginMatch}
             onUpdate={setMatchOptions}
@@ -503,7 +533,7 @@ export default function App() {
             options={matchOptions}
             playerNames={match.players}
             pointDisplay={pointDisplay}
-            profile={profile}
+            profile={displayProfile}
             server={match.server}
             sets={sets}
             elapsedTime={elapsedMatchTime}
@@ -533,13 +563,14 @@ export default function App() {
             finalScore={finalScore}
             matchStats={matchStats}
             playerNames={match.players}
-            profile={profile}
+            profile={displayProfile}
             saveStatus={saveStatus}
             sets={sets}
             elapsedTime={elapsedMatchTime}
             winnerName={winnerName}
             onNavigate={setScreen}
             onSave={saveCurrentMatch}
+            onSkillFeedback={applyOpponentSkillFeedback}
           />
         )}
         {screen === "highlights" && (
@@ -548,7 +579,7 @@ export default function App() {
             currentMatch={match}
             matchRecords={matchRecords}
             matchRecordsStatus={matchRecordsStatus}
-            profile={profile}
+            profile={displayProfile}
             onAction={showMessage}
             onFilter={setActiveFilter}
           />
@@ -557,7 +588,7 @@ export default function App() {
           <SocialScreen
             activeTab={socialTab}
             appUser={appUser}
-            profile={profile}
+            profile={displayProfile}
             onAction={showMessage}
             onTab={setSocialTab}
           />
@@ -565,7 +596,8 @@ export default function App() {
         {screen === "profile" && (
           <ProfileScreen
             accountStatus={accountStatus}
-            profile={profile}
+            profile={displayProfile}
+            progression={progression}
             profileSaveStatus={profileSaveStatus}
             onAction={showMessage}
             onNavigate={setScreen}
@@ -940,7 +972,8 @@ function CompleteScreen({
   sets,
   saveStatus,
   onNavigate,
-  onSave
+  onSave,
+  onSkillFeedback
 }: {
   backendMode: "local" | "firebase";
   elapsedTime: string;
@@ -953,6 +986,7 @@ function CompleteScreen({
   saveStatus: string;
   onNavigate: (screen: Screen) => void;
   onSave: () => void;
+  onSkillFeedback: (skill: string, delta: -1 | 1) => Promise<void> | void;
 }) {
   return (
     <section className="screen content complete-screen">
@@ -982,6 +1016,27 @@ function CompleteScreen({
           <p className="save-status">Only scored points were tracked. Use Ace during the match to record ace stats.</p>
         )}
       </div>
+
+      <article className="feedback-card">
+        <div className="section-row">
+          <div>
+            <p className="eyebrow">Opponent feedback</p>
+            <h2>Skill check</h2>
+          </div>
+          <span>+1 / -1</span>
+        </div>
+        <p>Ask your opponent to adjust what felt stronger or weaker today.</p>
+        <div className="feedback-skill-grid">
+          {profile.skills.map(([skill, value]) => (
+            <div className="feedback-skill-row" key={skill}>
+              <span>{skill}</span>
+              <strong>{(value / 10).toFixed(1)}</strong>
+              <button aria-label={`Decrease ${skill}`} onClick={() => onSkillFeedback(skill, -1)}><Minus size={16} /></button>
+              <button aria-label={`Increase ${skill}`} onClick={() => onSkillFeedback(skill, 1)}><Plus size={16} /></button>
+            </div>
+          ))}
+        </div>
+      </article>
 
       <div className="stack">
         <button className="hero-action compact" onClick={onSave}><Bookmark size={20} /> Save Match</button>
@@ -1228,7 +1283,7 @@ function SocialScreen({
                 <Portrait className={player.portrait} initials={player.avatar} />
                 <div>
                   <h3>{player.name}{player.isLive && <span className="live-chip">GPS</span>}</h3>
-                  <p>Level <b>{player.level}</b>{player.rating && <span> · {player.rating}</span>}</p>
+                  <p>Match level <b>{player.level}</b>{player.rating && <span> · {player.rating}</span>}</p>
                   <p><MapPin size={13} /> {player.distance} away</p>
                 </div>
                 <span className="streak"><Flame size={16} /> {player.streak} day streak</span>
@@ -1291,7 +1346,7 @@ function SocialScreen({
       )}
       <p className="list-label">Local ladder</p>
       <article className="ladder-card">
-        <div><span>Your Rank</span><strong>-- <small>of --</small></strong><b>{profile.level * 100} PTS</b></div>
+        <div><span>Your Rank</span><strong>-- <small>of --</small></strong><b>{profile.rating}</b></div>
         <div className="ladder-steps">
           {["Rising Ace", "Court Challenger", "Match Master", "Local Legend"].map((step, index) => (
             <span className={index === 1 ? "active" : ""} key={step}><Trophy size={20} />{step}</span>
@@ -1305,6 +1360,7 @@ function SocialScreen({
 function ProfileScreen({
   accountStatus,
   profile,
+  progression,
   profileSaveStatus,
   onAction,
   onNavigate,
@@ -1312,6 +1368,7 @@ function ProfileScreen({
 }: {
   accountStatus: string;
   profile: UserProfile;
+  progression: MatchProgression;
   profileSaveStatus: string;
   onAction: (message: string) => void;
   onNavigate: (screen: Screen) => void;
@@ -1333,6 +1390,15 @@ function ProfileScreen({
     setDraft((current) => ({ ...current, equipment: { ...current.equipment, [field]: value } }));
   }
 
+  function updateSkill(skillName: string, value: number) {
+    setDraft((current) => ({
+      ...current,
+      skills: current.skills.map(([label, currentValue]) => (
+        label === skillName ? [label, Math.max(0, Math.min(100, value))] : [label, currentValue]
+      ))
+    }));
+  }
+
   function updatePhoto(file?: File) {
     if (!file) return;
     const reader = new FileReader();
@@ -1350,8 +1416,10 @@ function ProfileScreen({
       ...draft,
       avatar: getInitials(draft.name),
       shortName: getShortName(draft.name),
-      xp: Math.max(0, Math.min(100, Number(draft.xp) || 0)),
-      level: Math.max(1, Number(draft.level) || 1)
+      level: progression.level,
+      rating: `${progression.points} pts`,
+      xp: progression.xp,
+      xpText: progression.xpText
     };
     setIsSaving(true);
     await onSaveProfile(nextProfile);
@@ -1395,30 +1463,12 @@ function ProfileScreen({
               <input value={draft.location} onChange={(event) => updateDraft("location", event.target.value)} />
             </label>
             <label>
-              <span>Rating</span>
-              <select value={draft.rating} onChange={(event) => updateDraft("rating", event.target.value)}>
-                {["NTRP 2.5", "NTRP 3.0", "NTRP 3.5", "NTRP 4.0", "NTRP 4.5", "NTRP 5.0"].map((rating) => <option key={rating}>{rating}</option>)}
-              </select>
-            </label>
-            <label>
               <span>Handedness</span>
               <input value={draft.hand} onChange={(event) => updateDraft("hand", event.target.value)} />
             </label>
             <label>
               <span>Goals / style</span>
               <input value={draft.favoritePro} onChange={(event) => updateDraft("favoritePro", event.target.value)} placeholder="Baseline, serve + volley, fitness..." />
-            </label>
-            <label>
-              <span>Level</span>
-              <input min="1" max="99" type="number" value={draft.level} onChange={(event) => updateDraft("level", Number(event.target.value))} />
-            </label>
-            <label>
-              <span>XP progress</span>
-              <input min="0" max="100" type="number" value={draft.xp} onChange={(event) => updateDraft("xp", Number(event.target.value))} />
-            </label>
-            <label>
-              <span>XP text</span>
-              <input value={draft.xpText} onChange={(event) => updateDraft("xpText", event.target.value)} />
             </label>
             <label>
               <span>Racket</span>
@@ -1441,6 +1491,19 @@ function ProfileScreen({
               <input value={draft.equipment.grip} onChange={(event) => updateEquipment("grip", event.target.value)} />
             </label>
           </div>
+          <div className="skill-editor-list">
+            <div className="section-row">
+              <h3>Set your skills</h3>
+              <span>Opponent feedback can adjust these after matches.</span>
+            </div>
+            {draft.skills.map(([skill, value]) => (
+              <label className="skill-editor-row" key={skill}>
+                <span>{skill}</span>
+                <input min="0" max="100" type="range" value={value} onChange={(event) => updateSkill(skill, Number(event.target.value))} />
+                <strong>{(value / 10).toFixed(1)}</strong>
+              </label>
+            ))}
+          </div>
           <div className="button-pair">
             <button className="hero-action compact" disabled={isSaving} onClick={saveProfile}>{isSaving ? "Saving..." : "Save changes"}</button>
             <button className="ghost-button" onClick={() => { setDraft(profile); setIsEditing(false); }}>Cancel</button>
@@ -1458,7 +1521,7 @@ function ProfileScreen({
       </article>
 
       <div className="level-row">
-        <div><span>Level</span><strong>{profile.level}</strong></div>
+        <div><span>Match Level</span><strong>{profile.level}</strong></div>
         <div>
           <p>{profile.xpText}</p>
           <div className="xp-track"><span style={{ width: `${profile.xp}%` }} /></div>
@@ -1796,13 +1859,13 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
 
       <div className="admin-stats">
         <Metric label="Profiles" value={String(profiles.length)} />
-        <Metric label="Average Level" value={String(averageLevel)} />
-        <Metric label="Total XP" value={totalXp.toLocaleString()} />
+        <Metric label="Avg Match Level" value={String(averageLevel)} />
+        <Metric label="Total Progress" value={totalXp.toLocaleString()} />
       </div>
 
       <label className="admin-search">
         <span>Search users</span>
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, city, rating, or user id" />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, city, points, or user id" />
       </label>
       <button className="ghost-button admin-refresh" disabled={isLoadingUsers} onClick={() => loadAdminProfiles()}>
         <RotateCcw size={17} /> {isLoadingUsers ? "Refreshing..." : "Refresh users"}
@@ -1830,20 +1893,7 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
               <span>Location</span>
               <input value={newUserDraft.location} onChange={(event) => updateNewUser("location", event.target.value)} />
             </label>
-            <label>
-              <span>Rating</span>
-              <select value={newUserDraft.rating} onChange={(event) => updateNewUser("rating", event.target.value)}>
-                {["NTRP 2.5", "NTRP 3.0", "NTRP 3.5", "NTRP 4.0", "NTRP 4.5", "NTRP 5.0"].map((rating) => <option key={rating}>{rating}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>Level</span>
-              <input min="1" max="99" type="number" value={newUserDraft.level} onChange={(event) => updateNewUser("level", Number(event.target.value))} />
-            </label>
-            <label>
-              <span>XP</span>
-              <input min="0" max="100" type="number" value={newUserDraft.xp} onChange={(event) => updateNewUser("xp", Number(event.target.value))} />
-            </label>
+            <p className="save-status">Match points start at 0 and are earned from saved matches.</p>
           </div>
         </article>
       )}
@@ -1864,7 +1914,7 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
           {!filteredProfiles.length && (
             <div className="admin-empty">
               <strong>{query ? "No matching users" : "No users visible"}</strong>
-              <span>{query ? "Try a different name, city, rating, or user id." : status}</span>
+              <span>{query ? "Try a different name, city, points, or user id." : status}</span>
             </div>
           )}
         </div>
@@ -1894,24 +1944,7 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
                   <span>Location</span>
                   <input value={draft.location} onChange={(event) => updateDraft("location", event.target.value)} />
                 </label>
-                <label>
-                  <span>Rating</span>
-                  <select value={draft.rating} onChange={(event) => updateDraft("rating", event.target.value)}>
-                    {["NTRP 2.5", "NTRP 3.0", "NTRP 3.5", "NTRP 4.0", "NTRP 4.5", "NTRP 5.0"].map((rating) => <option key={rating}>{rating}</option>)}
-                  </select>
-                </label>
-                <label>
-                  <span>Level</span>
-                  <input min="1" max="99" type="number" value={draft.level} onChange={(event) => updateDraft("level", Number(event.target.value))} />
-                </label>
-                <label>
-                  <span>XP</span>
-                  <input min="0" max="100" type="number" value={draft.xp} onChange={(event) => updateDraft("xp", Number(event.target.value))} />
-                </label>
-                <label>
-                  <span>XP text</span>
-                  <input value={draft.xpText} onChange={(event) => updateDraft("xpText", event.target.value)} />
-                </label>
+                <p className="save-status">Match level and points are read-only here. They update from saved matches.</p>
                 <label>
                   <span>Racket</span>
                   <input value={draft.equipment.racket} onChange={(event) => updateEquipment("racket", event.target.value)} />
@@ -2303,6 +2336,50 @@ function getUserMatchSummary(records: MatchRecord[]) {
   return { gamesWon, played, winRate };
 }
 
+function getMatchProgression(records: MatchRecord[]): MatchProgression {
+  const totals = records.reduce(
+    (summary, record) => {
+      const gamesWon = record.sets.reduce((sum, set) => sum + set.games[0], 0);
+      const gamesLost = record.sets.reduce((sum, set) => sum + set.games[1], 0);
+      const won = record.winner === record.players[0];
+      const margin = gamesWon - gamesLost;
+      const aces = record.stats?.aces?.[0] ?? 0;
+      const matchPoints =
+        10 +
+        gamesWon * 4 +
+        Math.max(0, margin) * 3 +
+        aces * 2 +
+        (won ? 35 : 0);
+
+      return {
+        gamesLost: summary.gamesLost + gamesLost,
+        gamesWon: summary.gamesWon + gamesWon,
+        losses: summary.losses + (record.winner && !won ? 1 : 0),
+        points: summary.points + Math.max(0, matchPoints),
+        wins: summary.wins + (won ? 1 : 0)
+      };
+    },
+    { gamesLost: 0, gamesWon: 0, losses: 0, points: 0, wins: 0 }
+  );
+  const level = Math.floor(totals.points / 100);
+  const xp = totals.points % 100;
+  const xpText = totals.points
+    ? `${totals.points} match pts · ${100 - xp} to level ${level + 1}`
+    : "0 match pts · play a match to start";
+
+  return { ...totals, level, xp, xpText };
+}
+
+function applyMatchProgression(profile: UserProfile, progression: MatchProgression): UserProfile {
+  return {
+    ...profile,
+    level: progression.level,
+    rating: `${progression.points} pts`,
+    xp: progression.xp,
+    xpText: progression.xpText
+  };
+}
+
 function formatMatchDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Saved match";
@@ -2342,7 +2419,8 @@ const demoNames = new Set([
 
 function sanitizeProfile(profile: UserProfile, appUser?: AppUser) {
   const favoritePro = profile.favoritePro || "";
-  if (!isDemoName(profile.name) && !favoritePro.toLowerCase().includes("demo")) return profile;
+  const hasLegacyRating = profile.rating.toLowerCase().includes("ntrp");
+  if (!isDemoName(profile.name) && !favoritePro.toLowerCase().includes("demo") && !hasLegacyRating) return profile;
 
   const name = getNameFromEmail(appUser?.email ?? undefined) || (isDemoName(profile.name) ? user.name : profile.name);
   return normalizeProfileDraft({
@@ -2351,15 +2429,15 @@ function sanitizeProfile(profile: UserProfile, appUser?: AppUser) {
     equipment: isDemoName(profile.name) ? user.equipment : profile.equipment,
     favoritePro: favoritePro.toLowerCase().includes("demo") ? "" : favoritePro,
     hand: profile.hand || user.hand,
-    level: isDemoName(profile.name) ? user.level : profile.level,
+    level: isDemoName(profile.name) || hasLegacyRating ? user.level : profile.level,
     location: isDemoLocation(profile.location) ? user.location : profile.location,
     name,
     portrait: profile.portrait || user.portrait,
-    rating: isDemoName(profile.name) ? user.rating : profile.rating,
+    rating: isDemoName(profile.name) || hasLegacyRating ? user.rating : profile.rating,
     shortName: getShortName(name),
     skills: isDemoName(profile.name) ? user.skills : profile.skills,
-    xp: isDemoName(profile.name) ? user.xp : profile.xp,
-    xpText: isDemoName(profile.name) ? user.xpText : profile.xpText
+    xp: isDemoName(profile.name) || hasLegacyRating ? user.xp : profile.xp,
+    xpText: isDemoName(profile.name) || hasLegacyRating ? user.xpText : profile.xpText
   });
 }
 
@@ -2501,10 +2579,10 @@ function createBlankManagedProfile(): UserProfile {
     photoDataUrl: undefined,
     portrait: "portrait-three",
     location: "Local club",
-    rating: "NTRP 3.5",
-    level: 1,
+    rating: "0 pts",
+    level: 0,
     xp: 0,
-    xpText: "0 / 1,000 XP"
+    xpText: "0 match pts"
   };
 }
 
@@ -2514,7 +2592,7 @@ function normalizeProfileDraft(profile: UserProfile): UserProfile {
     avatar: getInitials(profile.name),
     shortName: getShortName(profile.name),
     xp: Math.max(0, Math.min(100, Number(profile.xp) || 0)),
-    level: Math.max(1, Number(profile.level) || 1)
+    level: Math.max(0, Number(profile.level) || 0)
   };
 }
 

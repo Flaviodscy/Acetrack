@@ -54,7 +54,7 @@ export async function listPlayerLocations(): Promise<PlayerLocation[]> {
         level: profile.level,
         name: profile.name,
         portrait: profile.portrait,
-        rating: profile.rating ?? "NTRP"
+        rating: profile.rating ?? "0 pts"
       },
       updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined
     }];
@@ -87,11 +87,11 @@ export function toNearbyPlayers(locations: PlayerLocation[], origin: Geolocation
         lng: location.lng,
         level: location.profile.level,
         name: location.profile.name,
-        points: Math.max(900, location.profile.level * 115),
+        points: Math.max(0, location.profile.level * 100),
         portrait: location.profile.portrait,
         rank: index + 1,
         rating: location.profile.rating,
-        streak: Math.max(1, Math.round(location.profile.level / 4)),
+        streak: Math.max(0, Math.round(location.profile.level / 4)),
         updatedAt: location.updatedAt
       };
     })
