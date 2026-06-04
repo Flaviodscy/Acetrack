@@ -3,9 +3,11 @@ import type { NearbyPlayer, UserProfile } from "../types/domain";
 
 export type PlayerLocation = {
   id: string;
+  accuracy?: number;
   lat: number;
   lng: number;
   profile: Pick<UserProfile, "avatar" | "level" | "name" | "portrait" | "rating">;
+  source?: "aceTrackGps";
   updatedAt?: string;
 };
 
@@ -15,6 +17,7 @@ export async function savePlayerLocation(userId: string, profile: UserProfile, c
 
   const { doc, setDoc } = await import("firebase/firestore");
   await setDoc(doc(db, "publicLocations", userId), {
+    accuracy: Math.round(coords.accuracy),
     lat: roundCoordinate(coords.latitude),
     lng: roundCoordinate(coords.longitude),
     profile: {
@@ -24,6 +27,7 @@ export async function savePlayerLocation(userId: string, profile: UserProfile, c
       portrait: profile.portrait,
       rating: profile.rating
     },
+    source: "aceTrackGps",
     updatedAt: new Date().toISOString()
   });
 
@@ -40,12 +44,15 @@ export async function listPlayerLocations(): Promise<PlayerLocation[]> {
   return snapshot.docs.flatMap((locationDoc) => {
     const data = locationDoc.data();
     if (typeof data.lat !== "number" || typeof data.lng !== "number") return [];
+    if (data.source !== "aceTrackGps") return [];
     if (typeof data.updatedAt === "string" && isStaleLocation(data.updatedAt)) return [];
 
     const profile = data.profile as Partial<PlayerLocation["profile"]> | undefined;
     if (!profile?.name || !profile.avatar || !profile.portrait || typeof profile.level !== "number") return [];
+    if (isKnownDemoProfile(profile.name)) return [];
 
     return [{
+      accuracy: typeof data.accuracy === "number" ? data.accuracy : undefined,
       id: locationDoc.id,
       lat: data.lat,
       lng: data.lng,
@@ -56,19 +63,36 @@ export async function listPlayerLocations(): Promise<PlayerLocation[]> {
         portrait: profile.portrait,
         rating: profile.rating ?? "0 pts"
       },
+      source: "aceTrackGps",
       updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined
     }];
   });
 }
 
 function roundCoordinate(value: number) {
-  return Math.round(value * 1000) / 1000;
+  return Math.round(value * 100000) / 100000;
 }
 
 function isStaleLocation(updatedAt: string) {
   const timestamp = Date.parse(updatedAt);
   if (!Number.isFinite(timestamp)) return false;
   return Date.now() - timestamp > 24 * 60 * 60 * 1000;
+}
+
+function isKnownDemoProfile(name: string) {
+  return new Set([
+    "alex morgan",
+    "jamie carter",
+    "ethan brooks",
+    "olivia martinez",
+    "lucas green",
+    "maya patel",
+    "noah kim",
+    "nora kim",
+    "carlos alcaraz",
+    "serena",
+    "venus"
+  ]).has(name.trim().toLowerCase());
 }
 
 export function toNearbyPlayers(locations: PlayerLocation[], origin: GeolocationCoordinates, currentUserId?: string): NearbyPlayer[] {

@@ -81,6 +81,11 @@ export type MatchRecord = {
     winners: [number, number];
     unforcedErrors: [number, number];
   };
+  feedback?: {
+    adjustments: Record<string, -1 | 0 | 1>;
+    bonusPercent: number;
+    tokensUsed: number;
+  };
 };
 
 export type BackendMode = "local" | "firebase";

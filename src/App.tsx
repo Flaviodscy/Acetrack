@@ -48,7 +48,7 @@ import {
   Zap
 } from "lucide-react";
 import { opponent, user } from "./data/starterData";
-import { createMatchRecord, type MatchStatsInput } from "./backend/createMatchRecord";
+import { createMatchRecord, type MatchFeedbackInput, type MatchStatsInput } from "./backend/createMatchRecord";
 import {
   createEmailAccount,
   getCurrentAppUser,
@@ -61,6 +61,21 @@ import {
 import { getBackendMode, listUserMatchRecords, saveMatchRecord } from "./backend/matchRepository";
 import { listPlayerLocations, savePlayerLocation, toNearbyPlayers } from "./backend/nearbyRepository";
 import { createManagedUserProfile, deleteUserProfile, listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
+import {
+  acceptFriendRequest,
+  declineFriendRequest,
+  listFriendRequests,
+  listFriendships,
+  listIncomingSocialActions,
+  sendFriendRequest,
+  sendSocialAction,
+  toSocialProfile,
+  updateSocialActionStatus,
+  type FriendRequest,
+  type Friendship,
+  type SocialAction,
+  type SocialProfileSnapshot
+} from "./backend/socialRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint, type MatchState } from "./lib/tennisScoring";
 import type { AdminUserProfile, MatchRecord, NearbyPlayer, UserProfile } from "./types/domain";
@@ -79,6 +94,7 @@ type MatchProgression = {
   xp: number;
   xpText: string;
 };
+type SkillFeedback = Record<string, -1 | 0 | 1>;
 type MatchOptions = {
   customNames: boolean;
   scorer: 0 | 1;
@@ -123,6 +139,7 @@ export default function App() {
   const [matchOptions, setMatchOptions] = usePersistentState<MatchOptions>("acetrack:match-options", defaultMatchOptions);
   const [matchStartedAt, setMatchStartedAt] = usePersistentState<number | undefined>("acetrack:match-started-at", undefined);
   const [matchStats, setMatchStats] = usePersistentState<MatchStatsInput>("acetrack:match-stats", emptyMatchStats);
+  const [skillFeedback, setSkillFeedback] = usePersistentState<SkillFeedback>("acetrack:skill-feedback", {});
   const [activeFilter, setActiveFilter] = usePersistentState("acetrack:highlight-filter", "All");
   const [socialTab, setSocialTab] = usePersistentState("acetrack:social-tab", "Nearby");
   const [saveStatus, setSaveStatus] = useState("");
@@ -282,6 +299,20 @@ export default function App() {
     setScreen("live");
   }
 
+  function startChallenge(playerName: string) {
+    const nextOptions = normalizeMatchOptions({
+      ...matchOptions,
+      customNames: true,
+      sideA: [profile.name, "Partner"],
+      sideB: [playerName, "Partner"],
+      singles: true
+    }, profile.name);
+    setMatchOptions(nextOptions);
+    setMatchMode("setup");
+    setSaveStatus("");
+    setScreen("live");
+  }
+
   function beginMatch(options: MatchOptions) {
     const normalizedOptions = normalizeMatchOptions(options, profile.name);
     const nextMatch = createMatch(getMatchSideNames(normalizedOptions));
@@ -290,6 +321,7 @@ export default function App() {
     setMatch(nextMatch);
     setMatchStartedAt(Date.now());
     setMatchStats(emptyMatchStats);
+    setSkillFeedback({});
     setMatchMode("playing");
     setSaveStatus("");
     setScreen("live");
@@ -382,29 +414,32 @@ export default function App() {
     const appUser = await getCurrentAppUser();
     setAppUser(appUser);
     setAccountStatus(formatAccountStatus(appUser));
-    const record = createMatchRecord(match, appUser.id, elapsedMatchTime, matchStats);
+    const feedback = createFeedbackSummary(skillFeedback);
+    const record = createMatchRecord(match, appUser.id, elapsedMatchTime, matchStats, feedback);
     const result = await saveMatchRecord(record);
     const nextRecords = [record, ...matchRecords.filter((item) => item.id !== record.id)].slice(0, 25);
     setMatchRecords(nextRecords);
-    await saveUserProfile(appUser.id, applyMatchProgression(profile, getMatchProgression(nextRecords))).catch((error) => {
+    const profileWithFeedback = applySkillFeedback(profile, skillFeedback);
+    setProfile(profileWithFeedback);
+    await saveUserProfile(appUser.id, applyMatchProgression(profileWithFeedback, getMatchProgression(nextRecords))).catch((error) => {
       console.warn("Could not persist earned match points.", error);
     });
     setMatchRecordsStatus("Match saved");
-    setSaveStatus(result.mode === "firebase" ? "Saved to Firebase" : "Saved locally");
+    setSkillFeedback({});
+    setSaveStatus(result.mode === "firebase" ? `Saved to Firebase · +${calculateMatchPoints(record)} pts` : `Saved locally · +${calculateMatchPoints(record)} pts`);
   }
 
-  async function applyOpponentSkillFeedback(skill: string, delta: -1 | 1) {
-    const nextProfile = {
-      ...profile,
-      skills: profile.skills.map(([label, value]) => (
-        label === skill ? [label, Math.max(0, Math.min(100, value + delta * 10))] as [string, number] : [label, value] as [string, number]
-      ))
-    };
-    setProfile(nextProfile);
-    const activeUser = appUser ?? await getCurrentAppUser();
-    setAppUser(activeUser);
-    await saveUserProfile(activeUser.id, applyMatchProgression(nextProfile, progression));
-    showMessage(`${skill} ${delta > 0 ? "increased" : "decreased"} from feedback`);
+  function setOpponentSkillFeedback(skill: string, value: -1 | 0 | 1) {
+    setSkillFeedback((current) => {
+      const next = { ...current, [skill]: value };
+      if (value === 0) delete next[skill];
+      const tokensUsed = getFeedbackTokensUsed(next);
+      if (tokensUsed > 5) {
+        showMessage("Feedback has 5 tokens max");
+        return current;
+      }
+      return next;
+    });
   }
 
   async function signInAccount(email: string, password: string) {
@@ -561,6 +596,7 @@ export default function App() {
           <CompleteScreen
             backendMode={getBackendMode()}
             finalScore={finalScore}
+            feedback={skillFeedback}
             matchStats={matchStats}
             playerNames={match.players}
             profile={displayProfile}
@@ -570,7 +606,7 @@ export default function App() {
             winnerName={winnerName}
             onNavigate={setScreen}
             onSave={saveCurrentMatch}
-            onSkillFeedback={applyOpponentSkillFeedback}
+            onSkillFeedback={setOpponentSkillFeedback}
           />
         )}
         {screen === "highlights" && (
@@ -590,6 +626,7 @@ export default function App() {
             appUser={appUser}
             profile={displayProfile}
             onAction={showMessage}
+            onStartChallenge={startChallenge}
             onTab={setSocialTab}
           />
         )}
@@ -964,6 +1001,7 @@ function LiveMatchScreen({
 function CompleteScreen({
   backendMode,
   elapsedTime,
+  feedback,
   winnerName,
   finalScore,
   matchStats,
@@ -977,6 +1015,7 @@ function CompleteScreen({
 }: {
   backendMode: "local" | "firebase";
   elapsedTime: string;
+  feedback: SkillFeedback;
   winnerName: string;
   finalScore: string;
   matchStats: MatchStatsInput;
@@ -986,8 +1025,16 @@ function CompleteScreen({
   saveStatus: string;
   onNavigate: (screen: Screen) => void;
   onSave: () => void;
-  onSkillFeedback: (skill: string, delta: -1 | 1) => Promise<void> | void;
+  onSkillFeedback: (skill: string, value: -1 | 0 | 1) => void;
 }) {
+  const feedbackSummary = createFeedbackSummary(feedback);
+  const estimatedPoints = calculateMatchPointsFromData(
+    sets,
+    winnerName === playerNames[0] ? 0 : winnerName === playerNames[1] ? 1 : undefined,
+    matchStats,
+    feedbackSummary
+  );
+
   return (
     <section className="screen content complete-screen">
       <div className="celebration">
@@ -1009,6 +1056,10 @@ function CompleteScreen({
           <p className="eyebrow">Match stats</p>
           <span>Match time {elapsedTime}</span>
         </div>
+        <div className="earned-points-card">
+          <strong>+{estimatedPoints} pts</strong>
+          <span>Score margin, games won, result, aces, and feedback bonus</span>
+        </div>
         <StatBalance label="Aces" values={matchStats.aces} />
         <StatBalance label="Winners" values={matchStats.winners} />
         <StatBalance label="Unforced Errors" values={matchStats.unforcedErrors} />
@@ -1023,16 +1074,17 @@ function CompleteScreen({
             <p className="eyebrow">Opponent feedback</p>
             <h2>Skill check</h2>
           </div>
-          <span>+1 / -1</span>
+          <span>{feedbackSummary.tokensUsed}/5 tokens · +{feedbackSummary.bonusPercent}%</span>
         </div>
-        <p>Ask your opponent to adjust what felt stronger or weaker today.</p>
+        <p>Ask your opponent to use up to five tokens. Each non-zero vote adds a 1% match-points bonus.</p>
         <div className="feedback-skill-grid">
           {profile.skills.map(([skill, value]) => (
             <div className="feedback-skill-row" key={skill}>
               <span>{skill}</span>
-              <strong>{(value / 10).toFixed(1)}</strong>
-              <button aria-label={`Decrease ${skill}`} onClick={() => onSkillFeedback(skill, -1)}><Minus size={16} /></button>
-              <button aria-label={`Increase ${skill}`} onClick={() => onSkillFeedback(skill, 1)}><Plus size={16} /></button>
+              <strong>{(getAdjustedSkillValue(value, feedback[skill]) / 10).toFixed(1)}</strong>
+              <button className={feedback[skill] === -1 ? "active negative" : ""} aria-label={`Decrease ${skill}`} onClick={() => onSkillFeedback(skill, feedback[skill] === -1 ? 0 : -1)}><Minus size={16} /></button>
+              <button className={feedback[skill] === undefined ? "active neutral" : ""} aria-label={`Keep ${skill}`} onClick={() => onSkillFeedback(skill, 0)}>0</button>
+              <button className={feedback[skill] === 1 ? "active positive" : ""} aria-label={`Increase ${skill}`} onClick={() => onSkillFeedback(skill, feedback[skill] === 1 ? 0 : 1)}><Plus size={16} /></button>
             </div>
           ))}
         </div>
@@ -1068,11 +1120,10 @@ function HighlightsScreen({
   onFilter: (filter: string) => void;
 }) {
   const [shareCard, setShareCard] = useState("");
-  const currentFilter = ["All", "Wins", "Losses"].includes(activeFilter) ? activeFilter : "All";
+  const matchFilterOptions = useMemo(() => getMatchFilterOptions(matchRecords), [matchRecords]);
+  const currentFilter = matchFilterOptions.some((option) => option.id === activeFilter) ? activeFilter : "All";
   const filteredRecords = useMemo(() => {
-    if (currentFilter === "Wins") return matchRecords.filter((record) => record.winner === record.players[0]);
-    if (currentFilter === "Losses") return matchRecords.filter((record) => record.winner === record.players[1]);
-    return matchRecords;
+    return matchRecords.filter((record) => recordMatchesFilter(record, currentFilter));
   }, [currentFilter, matchRecords]);
   const shareRecord = matchRecords[0] ?? createUnsavedMatchPreview(currentMatch);
 
@@ -1119,9 +1170,9 @@ function HighlightsScreen({
         <button className="text-button" onClick={() => onAction(matchRecordsStatus)}>Status</button>
       </div>
       <div className="filter-row">
-        {["All", "Wins", "Losses"].map((filter) => (
-          <button className={filter === currentFilter ? "active" : ""} key={filter} onClick={() => onFilter(filter)}>
-            {filter}
+        {matchFilterOptions.map((filter) => (
+          <button className={filter.id === currentFilter ? "active" : ""} key={filter.id} onClick={() => onFilter(filter.id)}>
+            {filter.label}<span>{filter.count}</span>
           </button>
         ))}
         <button className="filter-icon" aria-label="Match filters" onClick={() => onAction("Match filters ready")}><SlidersHorizontal size={20} /></button>
@@ -1160,25 +1211,42 @@ function SocialScreen({
   appUser,
   profile,
   onAction,
+  onStartChallenge,
   onTab
 }: {
   activeTab: string;
   appUser?: AppUser;
   profile: UserProfile;
   onAction: (message: string) => void;
+  onStartChallenge: (playerName: string) => void;
   onTab: (tab: string) => void;
 }) {
   const [nearbyStatus, setNearbyStatus] = useState("Share GPS to find friends nearby");
   const [nearbyList, setNearbyList] = useState<NearbyPlayer[]>([]);
-  const [friendRequests, setFriendRequests] = useState<Array<{ id: string; name: string; avatar: string; portrait: string; rating: string; message: string }>>([]);
-  const [friends, setFriends] = useState<Array<{ id: string; name: string; avatar: string; portrait: string; rating: string }>>([]);
+  const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [friends, setFriends] = useState<Friendship[]>([]);
+  const [socialActions, setSocialActions] = useState<SocialAction[]>([]);
+  const [socialStatus, setSocialStatus] = useState("Connect with real players nearby.");
   const [isLocating, setIsLocating] = useState(false);
   const [gpsAlwaysOn, setGpsAlwaysOn] = usePersistentState("acetrack:gps-always-on", false);
-  const [radiusKm, setRadiusKm] = useState(15);
+  const [radiusKm, setRadiusKm] = usePersistentState("acetrack:gps-radius-km", 15);
+  const currentUserId = appUser?.id;
 
   useEffect(() => {
     setNearbyList((current) => rankNearbyPlayers(current));
   }, [radiusKm]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setFriendRequests([]);
+      setFriends([]);
+      setSocialActions([]);
+      setSocialStatus("Sign in to add friends and send challenges.");
+      return;
+    }
+
+    loadSocialConnections(currentUserId);
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!gpsAlwaysOn || activeTab !== "Nearby" || !navigator.geolocation) return;
@@ -1209,6 +1277,24 @@ function SocialScreen({
     if (announce) onAction("Nearby players updated");
   }
 
+  async function loadSocialConnections(userId = currentUserId) {
+    if (!userId) return;
+    setSocialStatus("Loading social activity...");
+    try {
+      const [requests, friendships, actions] = await Promise.all([
+        listFriendRequests(userId),
+        listFriendships(userId),
+        listIncomingSocialActions(userId)
+      ]);
+      setFriendRequests(requests);
+      setFriends(friendships);
+      setSocialActions(actions);
+      setSocialStatus(friendships.length ? `${friendships.length} friend${friendships.length === 1 ? "" : "s"} connected` : "No friends yet. Add real players from Nearby.");
+    } catch (error) {
+      setSocialStatus(getSocialErrorMessage(error));
+    }
+  }
+
   async function refreshNearbyFromGps() {
     if (!navigator.geolocation) {
       setNearbyStatus("GPS is not available in this browser");
@@ -1230,16 +1316,53 @@ function SocialScreen({
   }
 
   const visibleNearbyPlayers = nearbyList.filter((player) => player.distanceKm <= radiusKm);
+  const requestCount = friendRequests.length + socialActions.length;
 
-  function acceptRequest(request: typeof friendRequests[number]) {
-    setFriendRequests((current) => current.filter((item) => item.id !== request.id));
-    setFriends((current) => [{ id: `friend-${request.id}`, name: request.name, avatar: request.avatar, portrait: request.portrait, rating: request.rating }, ...current]);
-    onAction(`${request.name} accepted`);
+  function updateRadius(value: number) {
+    setRadiusKm(Math.max(1, Math.min(250, Math.round(value) || 1)));
   }
 
-  function declineRequest(request: typeof friendRequests[number]) {
-    setFriendRequests((current) => current.filter((item) => item.id !== request.id));
-    onAction(`${request.name} declined`);
+  async function addFriend(player: NearbyPlayer) {
+    const activeUser = appUser ?? await getCurrentAppUser();
+    await sendFriendRequest(activeUser.id, profile, player.id, nearbyPlayerToSocialProfile(player));
+    onAction(`Friend request sent to ${player.name}`);
+  }
+
+  async function challengePlayer(player: NearbyPlayer | SocialProfileSnapshot, playerId: string) {
+    const activeUser = appUser ?? await getCurrentAppUser();
+    await sendSocialAction("challenge", activeUser.id, profile, playerId, "distance" in player ? nearbyPlayerToSocialProfile(player) : player);
+    onAction(`Challenge sent to ${player.name}`);
+  }
+
+  async function pokePlayer(player: SocialProfileSnapshot, playerId: string) {
+    const activeUser = appUser ?? await getCurrentAppUser();
+    await sendSocialAction("poke", activeUser.id, profile, playerId, player);
+    onAction(`Poked ${player.name}`);
+  }
+
+  async function acceptRequest(request: FriendRequest) {
+    await acceptFriendRequest(request, profile);
+    onAction(`${request.fromProfile.name} added`);
+    await loadSocialConnections();
+  }
+
+  async function declineRequest(request: FriendRequest) {
+    await declineFriendRequest(request);
+    onAction(`${request.fromProfile.name} declined`);
+    await loadSocialConnections();
+  }
+
+  async function acceptAction(action: SocialAction) {
+    await updateSocialActionStatus(action, "accepted");
+    onAction(action.type === "challenge" ? `Challenge accepted from ${action.fromProfile.name}` : `Poke answered`);
+    if (action.type === "challenge") onStartChallenge(action.fromProfile.name);
+    await loadSocialConnections();
+  }
+
+  async function dismissAction(action: SocialAction) {
+    await updateSocialActionStatus(action, "dismissed");
+    onAction(`${action.type === "challenge" ? "Challenge" : "Poke"} dismissed`);
+    await loadSocialConnections();
   }
 
   return (
@@ -1251,17 +1374,27 @@ function SocialScreen({
       <div className="tabs">
         {["Nearby", "Friends", "Requests"].map((tab) => (
           <button className={tab === activeTab ? "active" : ""} onClick={() => onTab(tab)} key={tab}>
-            {tab}{tab === "Requests" && friendRequests.length > 0 && <span className="badge">{friendRequests.length}</span>}
+            {tab}{tab === "Requests" && requestCount > 0 && <span className="badge">{requestCount}</span>}
           </button>
         ))}
       </div>
 
       {activeTab === "Nearby" && (
         <>
-          <div className="section-row">
-            <button className="distance-pill" onClick={() => setRadiusKm((current) => current === 15 ? 40 : 15)}><MapPin size={18} /> Within {radiusKm} km <ChevronRight size={16} /></button>
-            <button className="icon-button" aria-label="Player filters" onClick={() => onAction("Player filters ready")}><SlidersHorizontal size={20} /></button>
-          </div>
+          <article className="distance-control-card">
+            <div className="section-row">
+              <div>
+                <p className="eyebrow">Distance</p>
+                <strong>Within {radiusKm} km</strong>
+              </div>
+              <label>
+                <input min="1" max="250" value={radiusKm} type="number" onChange={(event) => updateRadius(Number(event.target.value))} />
+                <span>km</span>
+              </label>
+            </div>
+            <input aria-label="Nearby search distance" min="1" max="250" type="range" value={radiusKm} onChange={(event) => updateRadius(Number(event.target.value))} />
+            <p>{nearbyList.length ? `${visibleNearbyPlayers.length} of ${nearbyList.length} real GPS players inside this radius.` : "Only real GPS-enabled AceTrack users will appear here."}</p>
+          </article>
           <article className="gps-card">
             <div>
               <p className="eyebrow">Live GPS</p>
@@ -1288,13 +1421,16 @@ function SocialScreen({
                 </div>
                 <span className="streak"><Flame size={16} /> {player.streak} day streak</span>
                 <div className="points"><strong>{player.points.toLocaleString()}</strong><span>PTS</span></div>
-                <button onClick={() => onAction(`Challenge sent to ${player.name}`)}>Challenge</button>
+                <div className="player-actions">
+                  <button disabled={isFriend(friends, player.id)} onClick={() => addFriend(player)}>{isFriend(friends, player.id) ? "Friend" : "Add"}</button>
+                  <button onClick={() => challengePlayer(player, player.id)}>Challenge</button>
+                </div>
               </article>
             ))}
             {!visibleNearbyPlayers.length && (
               <EmptyState
                 icon={MapPin}
-                message={gpsAlwaysOn ? "Ask your friends to open AceTrack and enable GPS too." : "Enable GPS to publish your location and load nearby real players."}
+                message={nearbyList.length ? `${nearbyList.length} real player${nearbyList.length === 1 ? " is" : "s are"} outside this radius. Increase the km range to see them.` : gpsAlwaysOn ? "Nobody in your area yet. Ask your friend to open AceTrack and enable GPS too." : "Enable GPS to publish your location and load nearby real players."}
                 title={`No players inside ${radiusKm} km yet`}
                 actionLabel={gpsAlwaysOn ? "Update GPS" : "Use GPS"}
                 onAction={refreshNearbyFromGps}
@@ -1306,17 +1442,26 @@ function SocialScreen({
 
       {activeTab === "Friends" && (
         <div className="request-list">
-          {friends.map((friend) => (
-            <article className="request-row" key={friend.id}>
+          <p className="social-status">{socialStatus}</p>
+          {friends.map((friendship) => {
+            const friend = getFriendProfile(friendship, currentUserId);
+            const friendId = getFriendId(friendship, currentUserId);
+            if (!friend || !friendId) return null;
+            return (
+            <article className="request-row friend-row" key={friendship.id}>
               <Portrait className={friend.portrait} initials={friend.avatar} />
-              <div><h3>{friend.name}</h3><p>{friend.rating} · Friend</p></div>
-              <button onClick={() => onAction(`Challenge sent to ${friend.name}`)}>Challenge</button>
+              <div><h3>{friend.name}</h3><p>{friend.rating} · You: {profile.rating}</p></div>
+              <div className="request-actions">
+                <button onClick={() => pokePlayer(friend, friendId)}>Poke</button>
+                <button onClick={() => challengePlayer(friend, friendId)}>Challenge</button>
+              </div>
             </article>
-          ))}
+            );
+          })}
           {!friends.length && (
             <EmptyState
               icon={Users}
-              message="Accepted players will appear here once friend requests exist."
+              message="Add real GPS players nearby to follow their points and compare weekly progress."
               title="No friends yet"
             />
           )}
@@ -1327,18 +1472,28 @@ function SocialScreen({
         <div className="request-list">
           {friendRequests.map((request) => (
             <article className="request-row" key={request.id}>
-              <Portrait className={request.portrait} initials={request.avatar} />
-              <div><h3>{request.name}</h3><p>{request.rating} · {request.message}</p></div>
+              <Portrait className={request.fromProfile.portrait} initials={request.fromProfile.avatar} />
+              <div><h3>{request.fromProfile.name}</h3><p>{request.fromProfile.rating} · Wants to follow your progress</p></div>
               <div className="request-actions">
-                <button aria-label={`Accept ${request.name}`} onClick={() => acceptRequest(request)}><Check size={17} /> Accept</button>
-                <button aria-label={`Decline ${request.name}`} className="quiet" onClick={() => declineRequest(request)}><X size={17} /> Decline</button>
+                <button aria-label={`Accept ${request.fromProfile.name}`} onClick={() => acceptRequest(request)}><Check size={17} /> Accept</button>
+                <button aria-label={`Decline ${request.fromProfile.name}`} className="quiet" onClick={() => declineRequest(request)}><X size={17} /> Decline</button>
               </div>
             </article>
           ))}
-          {!friendRequests.length && (
+          {socialActions.map((action) => (
+            <article className="request-row" key={action.id}>
+              <Portrait className={action.fromProfile.portrait} initials={action.fromProfile.avatar} />
+              <div><h3>{action.fromProfile.name}</h3><p>{action.type === "challenge" ? "Sent a challenge" : "Poked you"} · {action.fromProfile.rating}</p></div>
+              <div className="request-actions">
+                <button aria-label={`Accept ${action.type}`} onClick={() => acceptAction(action)}><Check size={17} /> {action.type === "challenge" ? "Accept" : "Answer"}</button>
+                <button aria-label={`Dismiss ${action.type}`} className="quiet" onClick={() => dismissAction(action)}><X size={17} /> Dismiss</button>
+              </div>
+            </article>
+          ))}
+          {!requestCount && (
             <EmptyState
               icon={UserPlus}
-              message="Friend requests are not connected to a backend collection yet."
+              message="Friend requests, pokes, and challenges from real players will appear here."
               title="No pending requests"
             />
           )}
@@ -2263,6 +2418,30 @@ function rankNearbyPlayers(players: NearbyPlayer[]) {
     .map((player, index) => ({ ...player, rank: index + 1 }));
 }
 
+function nearbyPlayerToSocialProfile(player: NearbyPlayer): SocialProfileSnapshot {
+  return {
+    avatar: player.avatar,
+    level: player.level,
+    name: player.name,
+    points: player.points,
+    portrait: player.portrait,
+    rating: player.rating ?? `${player.points} pts`
+  };
+}
+
+function isFriend(friendships: Friendship[], playerId: string) {
+  return friendships.some((friendship) => friendship.userIds.includes(playerId));
+}
+
+function getFriendId(friendship: Friendship, currentUserId?: string) {
+  return friendship.userIds.find((userId) => userId !== currentUserId);
+}
+
+function getFriendProfile(friendship: Friendship, currentUserId?: string) {
+  const friendId = getFriendId(friendship, currentUserId);
+  return friendId ? friendship.profiles[friendId] : undefined;
+}
+
 function useElapsedTime(startedAt: number | undefined, running: boolean) {
   const [now, setNow] = useState(Date.now());
 
@@ -2342,14 +2521,7 @@ function getMatchProgression(records: MatchRecord[]): MatchProgression {
       const gamesWon = record.sets.reduce((sum, set) => sum + set.games[0], 0);
       const gamesLost = record.sets.reduce((sum, set) => sum + set.games[1], 0);
       const won = record.winner === record.players[0];
-      const margin = gamesWon - gamesLost;
-      const aces = record.stats?.aces?.[0] ?? 0;
-      const matchPoints =
-        10 +
-        gamesWon * 4 +
-        Math.max(0, margin) * 3 +
-        aces * 2 +
-        (won ? 35 : 0);
+      const matchPoints = calculateMatchPoints(record);
 
       return {
         gamesLost: summary.gamesLost + gamesLost,
@@ -2370,6 +2542,62 @@ function getMatchProgression(records: MatchRecord[]): MatchProgression {
   return { ...totals, level, xp, xpText };
 }
 
+function calculateMatchPoints(record: MatchRecord) {
+  return calculateMatchPointsFromData(
+    record.sets,
+    record.winner === record.players[0] ? 0 : record.winner === record.players[1] ? 1 : undefined,
+    record.stats,
+    record.feedback
+  );
+}
+
+function calculateMatchPointsFromData(
+  sets: ReturnType<typeof getCompletedSets>,
+  winnerSide: 0 | 1 | undefined,
+  stats: MatchStatsInput,
+  feedback?: MatchFeedbackInput
+) {
+  const gamesWon = sets.reduce((sum, set) => sum + set.games[0], 0);
+  const gamesLost = sets.reduce((sum, set) => sum + set.games[1], 0);
+  const margin = gamesWon - gamesLost;
+  const resultBonus = winnerSide === 0 ? 40 : winnerSide === 1 ? 8 : 0;
+  const dominanceBonus = Math.max(0, margin) * 6;
+  const closeLossBonus = winnerSide === 1 && Math.abs(margin) <= 3 ? 10 : 0;
+  const aceBonus = (stats.aces?.[0] ?? 0) * 2;
+  const basePoints = Math.max(0, 8 + gamesWon * 5 + dominanceBonus + closeLossBonus + aceBonus + resultBonus);
+  const bonusMultiplier = 1 + Math.min(5, Math.max(0, feedback?.bonusPercent ?? 0)) / 100;
+
+  return Math.round(basePoints * bonusMultiplier);
+}
+
+function createFeedbackSummary(feedback: SkillFeedback): MatchFeedbackInput {
+  const adjustments = Object.fromEntries(
+    Object.entries(feedback).filter(([, value]) => value === -1 || value === 1)
+  ) as Record<string, -1 | 0 | 1>;
+  const tokensUsed = getFeedbackTokensUsed(adjustments);
+
+  return {
+    adjustments,
+    bonusPercent: Math.min(5, tokensUsed),
+    tokensUsed
+  };
+}
+
+function getFeedbackTokensUsed(feedback: SkillFeedback) {
+  return Object.values(feedback).filter((value) => value === -1 || value === 1).length;
+}
+
+function applySkillFeedback(profile: UserProfile, feedback: SkillFeedback): UserProfile {
+  return {
+    ...profile,
+    skills: profile.skills.map(([label, value]) => [label, getAdjustedSkillValue(value, feedback[label])] as [string, number])
+  };
+}
+
+function getAdjustedSkillValue(value: number, adjustment?: -1 | 0 | 1) {
+  return Math.max(0, Math.min(100, value + (adjustment ?? 0) * 10));
+}
+
 function applyMatchProgression(profile: UserProfile, progression: MatchProgression): UserProfile {
   return {
     ...profile,
@@ -2384,6 +2612,35 @@ function formatMatchDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Saved match";
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+}
+
+function getMatchFilterOptions(records: MatchRecord[]) {
+  const options = [
+    { id: "All", label: "All" },
+    { id: "Wins", label: "Wins" },
+    { id: "Losses", label: "Losses" },
+    { id: "Dominant", label: "Dominant" },
+    { id: "Close", label: "Close" },
+    { id: "This Week", label: "This Week" }
+  ];
+
+  return options.map((option) => ({
+    ...option,
+    count: records.filter((record) => recordMatchesFilter(record, option.id)).length
+  }));
+}
+
+function recordMatchesFilter(record: MatchRecord, filter: string) {
+  if (filter === "Wins") return record.winner === record.players[0];
+  if (filter === "Losses") return record.winner === record.players[1];
+  if (filter === "Dominant") return record.winner === record.players[0] && getRecordMargin(record) >= 6;
+  if (filter === "Close") return Math.abs(getRecordMargin(record)) <= 3;
+  if (filter === "This Week") return Date.now() - Date.parse(record.createdAt) <= 7 * 24 * 60 * 60 * 1000;
+  return true;
+}
+
+function getRecordMargin(record: MatchRecord) {
+  return record.sets.reduce((sum, set) => sum + set.games[0] - set.games[1], 0);
 }
 
 function commandMatchesSide(command: string, sideName: string) {
@@ -2498,6 +2755,14 @@ function getMatchRecordsErrorMessage(error: unknown) {
     return "Saved matches need Firebase permission. Sign out, sign in, and try again.";
   }
   return detail || "Could not load saved matches.";
+}
+
+function getSocialErrorMessage(error: unknown) {
+  const detail = error instanceof Error ? error.message : String(error ?? "");
+  if (detail.includes("permission-denied") || detail.includes("Missing or insufficient permissions")) {
+    return "Social permissions need the latest Firebase rules. Try again after the deploy finishes.";
+  }
+  return detail || "Could not load social activity.";
 }
 
 function getAdminLoadErrorMessage(error: unknown) {
