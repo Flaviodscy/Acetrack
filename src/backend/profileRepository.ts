@@ -61,6 +61,17 @@ export async function createManagedUserProfile(profile: UserProfile, email?: str
   return { mode: "local", userId };
 }
 
+export async function deleteUserProfile(userId: string): Promise<{ mode: BackendMode }> {
+  const db = await getFirebaseDb();
+
+  if (!db) return { mode: "local" };
+
+  const { deleteDoc, doc } = await import("firebase/firestore");
+  await deleteDoc(doc(db, "users", userId, "profile", "main"));
+  await deleteDoc(doc(db, "publicLocations", userId)).catch(() => undefined);
+  return { mode: "firebase" };
+}
+
 export async function listUserProfiles(): Promise<AdminUserProfile[]> {
   const db = await getFirebaseDb();
 

@@ -38,6 +38,7 @@ import {
   Star,
   Target,
   Trophy,
+  Trash2,
   UserPlus,
   Users,
   Video,
@@ -59,7 +60,7 @@ import {
 } from "./backend/authRepository";
 import { getBackendMode, saveMatchRecord } from "./backend/matchRepository";
 import { listPlayerLocations, savePlayerLocation, toNearbyPlayers } from "./backend/nearbyRepository";
-import { createManagedUserProfile, listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
+import { createManagedUserProfile, deleteUserProfile, listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint } from "./lib/tennisScoring";
 import type { AdminUserProfile, NearbyPlayer, UserProfile } from "./types/domain";
@@ -1501,6 +1502,7 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
   const [status, setStatus] = useState("Loading users...");
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
   useEffect(() => {
@@ -1611,6 +1613,28 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
       setStatus(error instanceof Error ? error.message : "Could not create user");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function deleteSelectedUser() {
+    if (!selectedProfile) return;
+
+    const confirmed = window.confirm(`Remove ${selectedProfile.name} from AceTrack management? This deletes their app profile and GPS card, not their Firebase Auth login.`);
+    if (!confirmed) return;
+
+    setIsDeletingUser(true);
+    setStatus("Deleting user profile...");
+    try {
+      const result = await deleteUserProfile(selectedProfile.userId);
+      setProfiles((current) => current.filter((item) => item.userId !== selectedProfile.userId));
+      setSelectedId("");
+      setDraft(undefined);
+      setStatus(result.mode === "firebase" ? "User profile deleted" : "User profile removed locally");
+      onAction("User profile deleted");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not delete user profile");
+    } finally {
+      setIsDeletingUser(false);
     }
   }
 
@@ -1754,6 +1778,9 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
                 <button className="hero-action compact" disabled={isSaving} onClick={saveAdminProfile}><ShieldCheck size={18} /> {isSaving ? "Saving..." : "Save user"}</button>
                 <button className="ghost-button" onClick={() => selectedProfile && setDraft(stripAdminFields(selectedProfile))}>Reset edits</button>
               </div>
+              <button className="danger-button admin-delete-user" disabled={isDeletingUser} onClick={deleteSelectedUser}>
+                <Trash2 size={18} /> {isDeletingUser ? "Deleting..." : selectedProfile?.accountType === "managed" ? "Delete managed user" : "Delete app profile"}
+              </button>
             </>
           ) : (
             <p className="admin-empty">{status}</p>
