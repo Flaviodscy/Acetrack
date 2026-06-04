@@ -93,15 +93,19 @@ type VoicePrompt = {
   detail: string;
 };
 type MatchProgression = {
+  engagementPoints: number;
   gamesLost: number;
   gamesWon: number;
   level: number;
   losses: number;
+  matchPoints: number;
+  nextLevelPoints: number;
   points: number;
   wins: number;
   xp: number;
   xpText: string;
 };
+type EngagementReward = NonNullable<UserProfile["engagement"]>["rewards"][string];
 type SkillFeedback = Record<string, -1 | 0 | 1 | undefined>;
 type MatchOptions = {
   customNames: boolean;
@@ -170,7 +174,7 @@ export default function App() {
   const screenRef = useRef(screen);
   const voiceRecognitionRef = useRef<{ start: () => void; stop: () => void; abort?: () => void; onend: (() => void) | null; onerror: ((event: unknown) => void) | null; onresult: ((event: unknown) => void) | null; continuous?: boolean; interimResults?: boolean; lang?: string } | undefined>(undefined);
 
-  const progression = useMemo(() => getMatchProgression(matchRecords), [matchRecords]);
+  const progression = useMemo(() => getPlayerProgression(matchRecords, profile.engagement), [matchRecords, profile.engagement]);
   const displayProfile = useMemo(() => applyMatchProgression(profile, progression), [profile, progression]);
   const pointDisplay = getPointDisplay(match);
   const sets = getCompletedSets(match);
@@ -305,6 +309,26 @@ export default function App() {
   function showMessage(message: string) {
     setAppMessage(message);
     window.setTimeout(() => setAppMessage(""), 2400);
+  }
+
+  async function persistProfile(nextProfile: UserProfile, message = "Profile saved") {
+    const progressedProfile = applyMatchProgression(nextProfile, getPlayerProgression(matchRecords, nextProfile.engagement));
+    setProfile(progressedProfile);
+    setProfileSaveStatus("Saving profile...");
+    const activeUser = appUser ?? await getCurrentAppUser();
+    setAppUser(activeUser);
+    const result = await saveUserProfile(activeUser.id, progressedProfile);
+    setProfileSaveStatus(result.mode === "firebase" ? "Profile saved to cloud" : "Profile saved locally");
+    showMessage(message);
+    return progressedProfile;
+  }
+
+  async function awardProfileXp(id: string, reward: EngagementReward) {
+    const result = addEngagementReward(profile, id, reward);
+    if (!result.awarded) return false;
+
+    await persistProfile(result.profile, `+${reward.points} Ace XP · ${reward.label}`);
+    return true;
   }
 
   async function hydrateProfile(appUser: AppUser) {
@@ -697,7 +721,14 @@ export default function App() {
     const nextRecords = [record, ...matchRecords.filter((item) => item.id !== record.id)].slice(0, 25);
     setMatchRecords(nextRecords);
     const profileWithFeedback = applySkillFeedback(profile, skillFeedback);
-    const nextProfile = applyMatchProgression(profileWithFeedback, getMatchProgression(nextRecords));
+    const feedbackReward = opponentFeedback.tokensUsed
+      ? addEngagementReward(
+        profileWithFeedback,
+        `feedback:${record.id}`,
+        createEngagementReward("feedback", 25 + opponentFeedback.tokensUsed * 2, "Gave opponent feedback")
+      )
+      : { awarded: false, profile: profileWithFeedback };
+    const nextProfile = applyMatchProgression(feedbackReward.profile, getPlayerProgression(nextRecords, feedbackReward.profile.engagement));
     setProfile(nextProfile);
     await saveUserProfile(appUser.id, nextProfile).catch((error) => {
       console.warn("Could not persist earned match points.", error);
@@ -705,7 +736,8 @@ export default function App() {
     setMatchRecordsStatus("Match saved");
     setSkillFeedback({});
     setOpponentSkillFeedback({});
-    setSaveStatus(result.mode === "firebase" ? `Saved to Firebase · +${calculateMatchPoints(record)} pts` : `Saved locally · +${calculateMatchPoints(record)} pts`);
+    const feedbackText = feedbackReward.awarded ? ` · +${25 + opponentFeedback.tokensUsed * 2} feedback XP` : "";
+    setSaveStatus(result.mode === "firebase" ? `Saved to Firebase · +${calculateMatchPoints(record)} match XP${feedbackText}` : `Saved locally · +${calculateMatchPoints(record)} match XP${feedbackText}`);
   }
 
   function setReceivedSkillFeedback(skill: string, value: -1 | 0 | 1 | undefined) {
@@ -902,6 +934,7 @@ export default function App() {
             matchRecordsStatus={matchRecordsStatus}
             profile={displayProfile}
             onAction={showMessage}
+            onAwardXp={awardProfileXp}
             onFilter={setActiveFilter}
           />
         )}
@@ -911,6 +944,7 @@ export default function App() {
             appUser={appUser}
             profile={displayProfile}
             onAction={showMessage}
+            onAwardXp={awardProfileXp}
             onStartChallenge={startChallenge}
             onSocialChanged={() => appUser && refreshIncomingActions(appUser.id)}
             onTab={setSocialTab}
@@ -925,13 +959,7 @@ export default function App() {
             onAction={showMessage}
             onNavigate={setScreen}
             onSaveProfile={async (nextProfile) => {
-              setProfile(nextProfile);
-              setProfileSaveStatus("Saving profile...");
-              const activeUser = appUser ?? await getCurrentAppUser();
-              setAppUser(activeUser);
-              const result = await saveUserProfile(activeUser.id, nextProfile);
-              setProfileSaveStatus(result.mode === "firebase" ? "Profile saved to cloud" : "Profile saved locally");
-              showMessage(result.mode === "firebase" ? "Profile saved" : "Profile saved locally");
+              await persistProfile(nextProfile, "Profile saved");
             }}
           />
         )}
@@ -1474,6 +1502,7 @@ function HighlightsScreen({
   matchRecordsStatus,
   profile,
   onAction,
+  onAwardXp,
   onFilter
 }: {
   activeFilter: string;
@@ -1482,6 +1511,7 @@ function HighlightsScreen({
   matchRecordsStatus: string;
   profile: UserProfile;
   onAction: (message: string) => void;
+  onAwardXp: (id: string, reward: EngagementReward) => Promise<boolean>;
   onFilter: (filter: string) => void;
 }) {
   const [shareCard, setShareCard] = useState("");
@@ -1496,6 +1526,12 @@ function HighlightsScreen({
     const card = createShareCardSvg(profile, shareRecord);
     setShareCard(card);
     onAction("Share card generated");
+    onAwardXp(`share-card:${shareRecord.id}`, createEngagementReward("shareCard", 30, "Created match card"));
+  }
+
+  async function shareGeneratedCard() {
+    await shareMatchCard(shareCard, onAction);
+    await onAwardXp(`share-post:${shareRecord.id}`, createEngagementReward("sharePost", 40, "Shared match card"));
   }
 
   return (
@@ -1526,7 +1562,7 @@ function HighlightsScreen({
           <img alt="Generated AceTrack match share card" src={shareCard} />
           <div className="button-pair">
             <a className="ghost-button" download="acetrack-share-card.svg" href={shareCard}><Download size={18} /> Download</a>
-            <button className="hero-action compact" onClick={() => shareMatchCard(shareCard, onAction)}><Share2 size={18} /> Share Card</button>
+            <button className="hero-action compact" onClick={shareGeneratedCard}><Share2 size={18} /> Share Card</button>
           </div>
         </article>
       )}
@@ -1553,7 +1589,7 @@ function HighlightsScreen({
               <p>{record.finalScore} · {formatMatchDate(record.createdAt)}</p>
             </div>
             <div className="card-icons">
-              <button aria-label={`Share ${record.players[0]} vs ${record.players[1]}`} onClick={() => { setShareCard(createShareCardSvg(profile, record)); onAction("Share card generated"); }}><Share2 size={18} /></button>
+              <button aria-label={`Share ${record.players[0]} vs ${record.players[1]}`} onClick={() => { setShareCard(createShareCardSvg(profile, record)); onAction("Share card generated"); onAwardXp(`share-card:${record.id}`, createEngagementReward("shareCard", 30, "Created match card")); }}><Share2 size={18} /></button>
             </div>
           </article>
         ))}
@@ -1574,6 +1610,7 @@ function SocialScreen({
   appUser,
   profile,
   onAction,
+  onAwardXp,
   onStartChallenge,
   onSocialChanged,
   onTab
@@ -1582,6 +1619,7 @@ function SocialScreen({
   appUser?: AppUser;
   profile: UserProfile;
   onAction: (message: string) => void;
+  onAwardXp: (id: string, reward: EngagementReward) => Promise<boolean>;
   onStartChallenge: (playerName: string) => void;
   onSocialChanged: () => void;
   onTab: (tab: string) => void;
@@ -1696,8 +1734,9 @@ function SocialScreen({
 
   async function challengePlayer(player: NearbyPlayer | SocialProfileSnapshot, playerId: string) {
     const activeUser = appUser ?? await getCurrentAppUser();
-    await sendSocialAction("challenge", activeUser.id, profile, playerId, "distance" in player ? nearbyPlayerToSocialProfile(player) : player);
-    onAction(`Challenge sent to ${player.name}`);
+    const result = await sendSocialAction("challenge", activeUser.id, profile, playerId, "distance" in player ? nearbyPlayerToSocialProfile(player) : player);
+    const awarded = await onAwardXp(`challenge:${result.action.id}`, createEngagementReward("challenge", 15, "Sent challenge"));
+    onAction(awarded ? `Challenge sent to ${player.name} · +15 Ace XP` : `Challenge sent to ${player.name}`);
     onSocialChanged();
   }
 
@@ -1788,7 +1827,7 @@ function SocialScreen({
                 <Portrait className={player.portrait} initials={player.avatar} />
                 <div>
                   <h3>{player.name}{player.isLive && <span className="live-chip">GPS</span>}</h3>
-                  <p>Match level <b>{player.level}</b>{player.rating && <span> · {player.rating}</span>}</p>
+                  <p>Ace level <b>{player.level}</b>{player.rating && <span> · {player.rating}</span>}</p>
                   <p><MapPin size={13} /> {player.distance} away</p>
                 </div>
                 <span className="streak"><Flame size={16} /> {player.streak} day streak</span>
@@ -1904,6 +1943,8 @@ function ProfileScreen({
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState<UserProfile>(profile);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLocatingHome, setIsLocatingHome] = useState(false);
+  const [homeStatus, setHomeStatus] = useState("");
 
   useEffect(() => {
     setDraft(profile);
@@ -1954,6 +1995,40 @@ function ProfileScreen({
     setIsEditing(false);
   }
 
+  async function saveHomeArea() {
+    if (!navigator.geolocation) {
+      setHomeStatus("GPS is not available in this browser");
+      return;
+    }
+
+    setIsLocatingHome(true);
+    setHomeStatus("Requesting location permission...");
+
+    try {
+      const position = await getCurrentPosition();
+      const homeArea = createPrivateHomeArea(position.coords);
+      const profileWithHome = {
+        ...draft,
+        homeArea,
+        location: isPlaceholderLocation(draft.location) ? homeArea.label : draft.location
+      };
+      const rewardResult = addEngagementReward(
+        profileWithHome,
+        "profile:home-area",
+        createEngagementReward("homeArea", 50, "Saved home area")
+      );
+      const nextProfile = normalizeProfileDraft(rewardResult.profile);
+      setDraft(nextProfile);
+      await onSaveProfile(nextProfile);
+      setHomeStatus(rewardResult.awarded ? "Home area saved privately · +50 Ace XP" : "Home area updated privately");
+      onAction(rewardResult.awarded ? "+50 Ace XP · Home area saved" : "Home area updated");
+    } catch (error) {
+      setHomeStatus(getLocationErrorMessage(error));
+    } finally {
+      setIsLocatingHome(false);
+    }
+  }
+
   return (
     <section className="screen content profile-screen">
       <div className="profile-hero">
@@ -1965,6 +2040,18 @@ function ProfileScreen({
         </div>
         <button className="account-button" onClick={() => setIsEditing((editing) => !editing)}>{isEditing ? "Close" : "Edit"}</button>
       </div>
+
+      <article className="home-area-card">
+        <div>
+          <p className="eyebrow">Private location</p>
+          <h2>{profile.homeArea ? "Home area saved" : "Add your home area"}</h2>
+          <p>{profile.homeArea ? `${profile.homeArea.label} · not your exact street address` : "Pin an approximate home area for future nearby features. Your exact address is not saved."}</p>
+          {homeStatus && <span>{homeStatus}</span>}
+        </div>
+        <button className="hero-action compact" disabled={isLocatingHome} onClick={saveHomeArea}>
+          <MapPin size={18} /> {isLocatingHome ? "Locating..." : profile.homeArea ? "Update home" : "Save home +50 XP"}
+        </button>
+      </article>
 
       {isEditing && (
         <article className="edit-profile-card">
@@ -2048,12 +2135,30 @@ function ProfileScreen({
       </article>
 
       <div className="level-row">
-        <div><span>Match Level</span><strong>{profile.level}</strong></div>
+        <div><span>Ace Level</span><strong>{profile.level}</strong></div>
         <div>
           <p>{profile.xpText}</p>
           <div className="xp-track"><span style={{ width: `${profile.xp}%` }} /></div>
         </div>
       </div>
+
+      <article className="flat-section rewards-section">
+        <div className="section-row">
+          <h2>Ace XP rewards</h2>
+          <span>{progression.engagementPoints} from actions · {progression.matchPoints} from matches</span>
+        </div>
+        <div className="reward-list">
+          {getRecentEngagementRewards(profile.engagement).map((reward) => (
+            <div className="reward-row" key={`${reward.type}-${reward.earnedAt}`}>
+              <span><Sparkles size={17} /> {reward.label}</span>
+              <strong>+{reward.points}</strong>
+            </div>
+          ))}
+          {!getRecentEngagementRewards(profile.engagement).length && (
+            <p className="save-status">Earn Ace XP by saving your home area, challenging players, giving feedback, and sharing match cards.</p>
+          )}
+        </div>
+      </article>
 
       <article className="flat-section">
         <div className="section-row">
@@ -2386,7 +2491,7 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
 
       <div className="admin-stats">
         <Metric label="Profiles" value={String(profiles.length)} />
-        <Metric label="Avg Match Level" value={String(averageLevel)} />
+        <Metric label="Avg Ace Level" value={String(averageLevel)} />
         <Metric label="Total Progress" value={totalXp.toLocaleString()} />
       </div>
 
@@ -2471,7 +2576,7 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
                   <span>Location</span>
                   <input value={draft.location} onChange={(event) => updateDraft("location", event.target.value)} />
                 </label>
-                <p className="save-status">Match level and points are read-only here. They update from saved matches.</p>
+                <p className="save-status">Ace level and XP are read-only here. They update from matches and rewarded actions.</p>
                 <label>
                   <span>Racket</span>
                   <input value={draft.equipment.racket} onChange={(event) => updateEquipment("racket", event.target.value)} />
@@ -2878,6 +2983,26 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
   });
 }
 
+function createPrivateHomeArea(coords: GeolocationCoordinates): NonNullable<UserProfile["homeArea"]> {
+  const lat = roundPrivateCoordinate(coords.latitude);
+  const lng = roundPrivateCoordinate(coords.longitude);
+  return {
+    accuracy: Math.round(coords.accuracy),
+    label: `Home area ${lat.toFixed(2)}, ${lng.toFixed(2)}`,
+    lat,
+    lng,
+    savedAt: new Date().toISOString()
+  };
+}
+
+function roundPrivateCoordinate(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function isPlaceholderLocation(location: string) {
+  return !location.trim() || ["add your club or city", "local club"].includes(location.trim().toLowerCase());
+}
+
 function rankNearbyPlayers(players: NearbyPlayer[]) {
   return [...players]
     .sort((a, b) => a.distanceKm - b.distanceKm)
@@ -3015,7 +3140,7 @@ function getUserMatchSummary(records: MatchRecord[]) {
   return { gamesWon, played, winRate };
 }
 
-function getMatchProgression(records: MatchRecord[]): MatchProgression {
+function getPlayerProgression(records: MatchRecord[], engagement: UserProfile["engagement"]): MatchProgression {
   const totals = records.reduce(
     (summary, record) => {
       const gamesWon = record.sets.reduce((sum, set) => sum + set.games[0], 0);
@@ -3033,13 +3158,75 @@ function getMatchProgression(records: MatchRecord[]): MatchProgression {
     },
     { gamesLost: 0, gamesWon: 0, losses: 0, points: 0, wins: 0 }
   );
-  const level = Math.floor(totals.points / 100);
-  const xp = totals.points % 100;
-  const xpText = totals.points
-    ? `${totals.points} match pts · ${100 - xp} to level ${level + 1}`
-    : "0 match pts · play a match to start";
+  const matchPoints = totals.points;
+  const engagementPoints = getEngagementPoints(engagement);
+  const points = matchPoints + engagementPoints;
+  const levelProgress = getLevelProgress(points);
+  const xpText = points
+    ? `${points} Ace XP · ${levelProgress.remaining} to level ${levelProgress.level + 1}`
+    : "0 Ace XP · play, share, or connect to start";
 
-  return { ...totals, level, xp, xpText };
+  return { ...totals, engagementPoints, level: levelProgress.level, matchPoints, nextLevelPoints: levelProgress.cost, points, xp: levelProgress.xp, xpText };
+}
+
+function createEngagementReward(type: EngagementReward["type"], points: number, label: string): EngagementReward {
+  return {
+    earnedAt: new Date().toISOString(),
+    label,
+    points,
+    type
+  };
+}
+
+function addEngagementReward(profile: UserProfile, id: string, reward: EngagementReward) {
+  const rewards = profile.engagement?.rewards ?? {};
+  if (rewards[id]) return { awarded: false, profile };
+
+  return {
+    awarded: true,
+    profile: {
+      ...profile,
+      engagement: {
+        rewards: {
+          ...rewards,
+          [id]: reward
+        }
+      }
+    }
+  };
+}
+
+function getEngagementPoints(engagement: UserProfile["engagement"]) {
+  return Object.values(engagement?.rewards ?? {}).reduce((sum, reward) => sum + Math.max(0, Number(reward.points) || 0), 0);
+}
+
+function getRecentEngagementRewards(engagement: UserProfile["engagement"]) {
+  return Object.values(engagement?.rewards ?? {})
+    .sort((a, b) => Date.parse(b.earnedAt) - Date.parse(a.earnedAt))
+    .slice(0, 3);
+}
+
+function getLevelProgress(totalPoints: number) {
+  let level = 0;
+  let remainingPoints = Math.max(0, totalPoints);
+  let cost = getLevelCost(level);
+
+  while (remainingPoints >= cost) {
+    remainingPoints -= cost;
+    level += 1;
+    cost = getLevelCost(level);
+  }
+
+  return {
+    cost,
+    level,
+    remaining: cost - remainingPoints,
+    xp: cost ? Math.round((remainingPoints / cost) * 100) : 0
+  };
+}
+
+function getLevelCost(level: number) {
+  return Math.round(80 + level * 35 + Math.pow(level, 1.65) * 12);
 }
 
 function calculateMatchPoints(record: MatchRecord) {
@@ -3126,7 +3313,7 @@ function applyMatchProgression(profile: UserProfile, progression: MatchProgressi
   return {
     ...profile,
     level: progression.level,
-    rating: `${progression.points} pts`,
+    rating: `${progression.points} Ace XP`,
     xp: progression.xp,
     xpText: progression.xpText
   };
@@ -3379,10 +3566,11 @@ function createBlankManagedProfile(): UserProfile {
     photoDataUrl: undefined,
     portrait: "portrait-three",
     location: "Local club",
-    rating: "0 pts",
+    rating: "0 Ace XP",
     level: 0,
     xp: 0,
-    xpText: "0 match pts"
+    xpText: "0 Ace XP",
+    engagement: { rewards: {} }
   };
 }
 
@@ -3390,6 +3578,7 @@ function normalizeProfileDraft(profile: UserProfile): UserProfile {
   return {
     ...profile,
     avatar: getInitials(profile.name),
+    engagement: { rewards: profile.engagement?.rewards ?? {} },
     shortName: getShortName(profile.name),
     xp: Math.max(0, Math.min(100, Number(profile.xp) || 0)),
     level: Math.max(0, Number(profile.level) || 0)

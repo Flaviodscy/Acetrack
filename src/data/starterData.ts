@@ -6,10 +6,11 @@ export const user: UserProfile = {
   avatar: "PL",
   portrait: "portrait-one",
   location: "Add your club or city",
-  rating: "0 pts",
+  rating: "0 Ace XP",
   level: 0,
   xp: 0,
-  xpText: "0 match pts",
+  xpText: "0 Ace XP",
+  engagement: { rewards: {} },
   hand: "Add handedness",
   favoritePro: "",
   skills: [

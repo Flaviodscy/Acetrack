@@ -23,10 +23,25 @@ export type UserProfile = {
   photoDataUrl?: string;
   portrait: string;
   location: string;
+  homeArea?: {
+    accuracy?: number;
+    label: string;
+    lat: number;
+    lng: number;
+    savedAt: string;
+  };
   rating: string;
   level: number;
   xp: number;
   xpText: string;
+  engagement?: {
+    rewards: Record<string, {
+      earnedAt: string;
+      label: string;
+      points: number;
+      type: "challenge" | "feedback" | "homeArea" | "shareCard" | "sharePost";
+    }>;
+  };
   hand: string;
   favoritePro: string;
   skills: Array<[string, number]>;

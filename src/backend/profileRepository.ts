@@ -106,6 +106,7 @@ function deserializeProfile(data: Record<string, unknown>): UserProfile {
 
   return {
     ...profile,
+    engagement: profile.engagement ?? { rewards: {} },
     skills: Array.isArray(profile.skills)
       ? profile.skills.map((skill) => Array.isArray(skill) ? skill : [skill.label, skill.value])
       : []

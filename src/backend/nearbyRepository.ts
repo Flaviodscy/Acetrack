@@ -61,7 +61,7 @@ export async function listPlayerLocations(): Promise<PlayerLocation[]> {
         level: profile.level,
         name: profile.name,
         portrait: profile.portrait,
-        rating: profile.rating ?? "0 pts"
+        rating: profile.rating ?? "0 Ace XP"
       },
       source: "aceTrackGps",
       updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined

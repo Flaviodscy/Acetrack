@@ -6321,6 +6321,95 @@ body,
   color: var(--ink);
 }
 
+.home-area-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(205, 234, 95, 0.22), rgba(255, 255, 255, 0.82));
+  box-shadow: inset 0 0 0 1px rgba(91, 104, 81, 0.08);
+  overflow: hidden;
+}
+
+.home-area-card h2,
+.home-area-card p {
+  margin: 0;
+}
+
+.home-area-card h2 {
+  color: var(--ink);
+  font-size: 1.12rem;
+}
+
+.home-area-card p,
+.home-area-card span {
+  color: var(--muted);
+  line-height: 1.42;
+}
+
+.home-area-card > button {
+  min-width: 160px;
+}
+
+.rewards-section .section-row > span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 760;
+}
+
+.reward-list {
+  display: grid;
+  gap: 8px;
+}
+
+.reward-row {
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(250, 252, 241, 0.84);
+}
+
+.reward-row span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-weight: 820;
+}
+
+.reward-row span svg {
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+}
+
+.reward-row strong {
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+}
+
+.profile-screen {
+  grid-auto-rows: max-content;
+  align-items: start;
+}
+
+.profile-screen .home-area-card,
+.profile-screen .account-card,
+.profile-screen .level-row,
+.profile-screen .flat-section,
+.profile-screen .pro-card {
+  align-self: start;
+  min-height: max-content;
+  overflow: visible;
+}
+
 @media (max-width: 460px) {
   .skill-editor-list,
   .feedback-card {
@@ -6351,6 +6440,17 @@ body,
   .distance-control-card {
     padding: 16px;
     border-radius: 20px;
+  }
+
+  .home-area-card {
+    grid-template-columns: 1fr;
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .home-area-card > button {
+    width: 100%;
+    min-width: 0;
   }
 
   .player-actions {
@@ -6470,6 +6570,21 @@ body,
 .achievement-card,
 .empty-state {
   overflow: hidden;
+}
+
+.profile-screen {
+  grid-auto-rows: max-content;
+  align-items: start;
+}
+
+.profile-screen .home-area-card,
+.profile-screen .account-card,
+.profile-screen .level-row,
+.profile-screen .flat-section,
+.profile-screen .pro-card {
+  align-self: start;
+  min-height: max-content;
+  overflow: visible;
 }
 
 .section-row {
