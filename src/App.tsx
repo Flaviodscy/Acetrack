@@ -217,8 +217,10 @@ export default function App() {
 
   function beginMatch(options: MatchOptions) {
     const normalizedOptions = normalizeMatchOptions(options, profile.name);
+    const nextMatch = createMatch(getMatchSideNames(normalizedOptions));
+    nextMatch.server = getInitialServerSide(normalizedOptions);
     setMatchOptions(normalizedOptions);
-    setMatch(createMatch(getMatchSideNames(normalizedOptions)));
+    setMatch(nextMatch);
     setMatchMode("playing");
     setSaveStatus("");
     setScreen("live");
@@ -426,11 +428,14 @@ export default function App() {
             isVoiceListening={isVoiceListening}
             matchWinner={match.winner}
             options={matchOptions}
+            playerNames={match.players}
             pointDisplay={pointDisplay}
             profile={profile}
+            server={match.server}
             sets={sets}
             onAction={showMessage}
             onPoint={addPoint}
+            onAce={() => addPoint(match.server)}
             onSoundToggle={toggleSound}
             onUndo={() => {
               setMatch(undoPoint(match));
@@ -452,6 +457,7 @@ export default function App() {
           <CompleteScreen
             backendMode={getBackendMode()}
             finalScore={finalScore}
+            playerNames={match.players}
             profile={profile}
             saveStatus={saveStatus}
             sets={sets}
@@ -702,11 +708,14 @@ function MatchSetupScreen({
 function LiveMatchScreen({
   isVoiceListening,
   options,
+  playerNames,
   pointDisplay,
   profile,
+  server,
   sets,
   matchWinner,
   onAction,
+  onAce,
   onPoint,
   onSoundToggle,
   onUndo,
@@ -720,11 +729,14 @@ function LiveMatchScreen({
 }: {
   isVoiceListening: boolean;
   options: MatchOptions;
+  playerNames: [string, string];
   pointDisplay: [string, string];
   profile: UserProfile;
+  server: 0 | 1;
   sets: ReturnType<typeof getCompletedSets>;
   matchWinner?: 0 | 1;
   onAction: (message: string) => void;
+  onAce: () => void;
   onPoint: (player: 0 | 1) => void;
   onSoundToggle: () => void;
   onUndo: () => void;
@@ -736,6 +748,9 @@ function LiveMatchScreen({
   onVoiceToggle: () => void;
   voiceStatus: string;
 }) {
+  const sideLabels = playerNames;
+  const compactSideLabels = sideLabels.map(getCompactSideName) as [string, string];
+
   return (
     <section className="screen content live-screen">
       <div className="match-status live-command-bar">
@@ -752,17 +767,23 @@ function LiveMatchScreen({
       </div>
 
       <div className="live-score-stage">
-        <div className="live-side-name left">{getSideDisplay(options, 0)}</div>
+        <div className={server === 0 ? "live-side-name left serving" : "live-side-name left"}>
+          <strong>{sideLabels[0]}</strong>
+          {server === 0 && <span>Serving</span>}
+        </div>
         <TennisBall />
-        <div className="live-side-name right">{getSideDisplay(options, 1)}</div>
+        <div className={server === 1 ? "live-side-name right serving" : "live-side-name right"}>
+          <strong>{sideLabels[1]}</strong>
+          {server === 1 && <span>Serving</span>}
+        </div>
         <div className="stage-score">{pointDisplay[0]}</div>
         <div className="stage-score">{pointDisplay[1]}</div>
         <div className="mini-set-floating">
-          <SetTable profile={profile} sets={sets} />
+          <SetTable playerNames={playerNames} profile={profile} sets={sets} />
         </div>
       </div>
 
-      <SetTable profile={profile} sets={sets} full />
+      <SetTable playerNames={playerNames} profile={profile} sets={sets} full />
 
       <div className="timer-row live-remote-row">
         <span><Radio size={16} /> {voiceStatus}</span>
@@ -782,15 +803,15 @@ function LiveMatchScreen({
       <div className="point-actions">
         <button className="match-action primary" onClick={() => onPoint(0)}>
           <span className="action-icon"><Plus size={26} /></span>
-          <span className="action-label">+ Point</span>
+          <span className="action-label">Point {compactSideLabels[0]}</span>
         </button>
         <button className="match-action opponent" onClick={() => onPoint(1)}>
           <span className="action-icon"><Minus size={26} /></span>
-          <span className="action-label">Opponent Point</span>
+          <span className="action-label">Point {compactSideLabels[1]}</span>
         </button>
-        <button className="match-action" onClick={() => onPoint(0)}>
+        <button className="match-action ace" onClick={onAce}>
           <span className="action-icon"><Zap size={24} /></span>
-          <span className="action-label">Ace</span>
+          <span className="action-label">Ace {compactSideLabels[server]}</span>
         </button>
         <button className="match-action" onClick={onUndo}>
           <span className="action-icon"><RotateCcw size={24} /></span>
@@ -819,6 +840,7 @@ function CompleteScreen({
   backendMode,
   winnerName,
   finalScore,
+  playerNames,
   profile,
   sets,
   saveStatus,
@@ -828,6 +850,7 @@ function CompleteScreen({
   backendMode: "local" | "firebase";
   winnerName: string;
   finalScore: string;
+  playerNames: [string, string];
   profile: UserProfile;
   sets: ReturnType<typeof getCompletedSets>;
   saveStatus: string;
@@ -843,12 +866,12 @@ function CompleteScreen({
       </div>
 
       <div className="complete-score">
-        <PlayerScore name={profile.name} meta={profile.rating} avatar={profile.avatar} photoDataUrl={profile.photoDataUrl} portrait={profile.portrait} score="6" />
+        <PlayerScore name={playerNames[0]} meta={profile.rating} avatar={profile.avatar} photoDataUrl={profile.photoDataUrl} portrait={profile.portrait} score="6" />
         <div className="divider">vs</div>
-        <PlayerScore name={opponent.name} meta={opponent.rating} avatar={opponent.avatar} portrait={opponent.portrait} score="3" />
+        <PlayerScore name={playerNames[1]} meta={opponent.rating} avatar={opponent.avatar} portrait={opponent.portrait} score="3" />
       </div>
 
-      <SetTable profile={profile} sets={sets} full title="Set by set" />
+      <SetTable playerNames={playerNames} profile={profile} sets={sets} full title="Set by set" />
 
       <div className="match-stats">
         <div className="section-row">
@@ -1840,24 +1863,27 @@ function PlayerScore({
 
 function SetTable({
   profile = user,
+  playerNames,
   sets,
   full = false,
   title = "Set"
 }: {
   profile?: UserProfile;
+  playerNames?: [string, string];
   sets: ReturnType<typeof getCompletedSets>;
   full?: boolean;
   title?: string;
 }) {
   const displaySets = sets.length ? sets : [{ games: [0, 0] as [number, number] }];
   const paddedSets = full ? [...displaySets, ...Array.from({ length: Math.max(0, 5 - displaySets.length) }, () => undefined)] : displaySets;
+  const rowNames = playerNames ? playerNames.map(getCompactSideName) : [profile.shortName, opponent.shortName];
   return (
     <table className="set-table">
       <thead>
         <tr><th>{title}</th>{paddedSets.map((_, index) => <th key={index}>{index + 1}</th>)}</tr>
       </thead>
       <tbody>
-        {[[profile.shortName, 0], [opponent.shortName, 1]].map(([name, playerIndex]) => (
+        {[[rowNames[0], 0], [rowNames[1], 1]].map(([name, playerIndex]) => (
           <tr key={name}>
             <td>{name}</td>
             {paddedSets.map((set, index) => <td key={index}>{set ? set.games[playerIndex as 0 | 1] : "-"}</td>)}
@@ -1919,6 +1945,18 @@ function getSideDisplay(options: MatchOptions, side: 0 | 1) {
 
 function getMatchSideNames(options: MatchOptions): [string, string] {
   return [getSideDisplay(options, 0), getSideDisplay(options, 1)];
+}
+
+function getInitialServerSide(options: MatchOptions): 0 | 1 {
+  return options.server < 2 ? 0 : 1;
+}
+
+function getCompactSideName(name: string) {
+  return name
+    .split("/")
+    .map((part) => part.trim().split(" ")[0])
+    .filter(Boolean)
+    .join(" / ");
 }
 
 function getSetupPlayerChoices(options: MatchOptions) {

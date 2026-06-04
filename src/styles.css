@@ -4785,13 +4785,35 @@ h1,
   z-index: 1;
   max-width: 42%;
   overflow: hidden;
+  display: grid;
+  gap: 2px;
   padding: 8px 14px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.66);
   color: var(--ink);
   font-weight: 850;
+  line-height: 1.05;
+  white-space: normal;
+}
+
+.live-side-name strong {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.live-side-name span {
+  color: var(--accent-strong);
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.live-side-name.serving {
+  background: rgba(241, 249, 195, 0.94);
+  box-shadow: 0 12px 28px rgba(156, 203, 16, 0.16);
 }
 
 .live-side-name.left {
@@ -4857,6 +4879,16 @@ h1,
 
 .live-screen .match-action.utility .action-icon {
   background: rgba(255, 255, 255, 0.82);
+}
+
+.live-screen .match-action.ace .action-icon {
+  background: linear-gradient(135deg, #eaff74, #bce31a);
+  color: #172104;
+}
+
+.live-screen .match-action.ace .action-label {
+  color: #50600a;
+  font-weight: 850;
 }
 
 @media (max-width: 420px) {

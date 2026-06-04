@@ -35,6 +35,17 @@ describe("tennis scoring", () => {
     expect(match.winner).toBeUndefined();
   });
 
+  it("keeps the selected server and alternates after each completed game", () => {
+    let match = createMatch(["Flavio", "Tania"]);
+    match.server = 1;
+
+    match = scoreGame(match, 0);
+    expect(match.server).toBe(0);
+
+    match = scoreGame(match, 1);
+    expect(match.server).toBe(1);
+  });
+
   it("plays a tiebreak at 6-6 and records the tiebreak score", () => {
     let match = createMatch();
     for (let i = 0; i < 5; i += 1) match = scoreGame(match, 0);
