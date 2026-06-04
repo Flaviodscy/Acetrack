@@ -8896,3 +8896,137 @@ body,
     min-width: 0;
   }
 }
+
+/* Final responsive polish: consistent gutters, readable cards, and calm negative space. */
+@media (max-width: 1023px) {
+  .screen.content {
+    align-content: start;
+  }
+
+  .simple-header,
+  .topbar,
+  .celebration,
+  .profile-hero {
+    margin-bottom: 4px;
+  }
+
+  .section-row h2,
+  .flat-section h2,
+  .feature-card h2 {
+    line-height: 1.15;
+  }
+
+  .recent-match-card,
+  .progress-card,
+  .feature-card,
+  .generated-share-card,
+  .gps-card,
+  .distance-control-card,
+  .ladder-card,
+  .flat-section,
+  .account-card,
+  .login-card,
+  .match-stats,
+  .feedback-card,
+  .complete-score,
+  .admin-editor,
+  .admin-create-card,
+  .challenge-card,
+  .empty-state {
+    box-shadow: 0 14px 34px rgba(70, 83, 55, 0.07), inset 0 0 0 1px rgba(38, 54, 31, 0.055);
+  }
+
+  .section-row button,
+  .text-button,
+  .ghost-button,
+  .hero-action,
+  .danger-button,
+  .player-actions button,
+  .request-actions button {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .empty-state {
+    min-height: 150px;
+  }
+
+  .profile-sync-status,
+  .save-status,
+  .social-status {
+    line-height: 1.4;
+  }
+
+  .equipment-row,
+  .reward-row,
+  .request-row,
+  .admin-row,
+  .player-row {
+    min-width: 0;
+  }
+
+  .equipment-row *,
+  .reward-row *,
+  .request-row *,
+  .admin-row *,
+  .player-row * {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .simple-header,
+  .topbar,
+  .celebration {
+    padding-top: 2px;
+  }
+
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen,
+  .admin-screen,
+  .complete-screen {
+    row-gap: 18px;
+  }
+
+  .home-screen .topbar > div {
+    display: grid;
+    gap: 12px;
+  }
+
+  .home-screen .eyebrow,
+  .home-screen h1,
+  .home-screen .hero-copy {
+    margin: 0;
+  }
+
+  .home-screen .section-title {
+    margin: 2px 0 0;
+    line-height: 1.25;
+  }
+
+  .start-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .start-grid .info-card {
+    min-height: 104px;
+  }
+
+  .recent-match-card {
+    min-height: 168px;
+    display: grid;
+    gap: 12px;
+    align-content: start;
+  }
+
+  .recent-match-card .section-row {
+    margin: 0;
+  }
+
+  .recent-match-card .empty-state {
+    min-height: 124px;
+  }
+}
