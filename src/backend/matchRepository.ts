@@ -36,6 +36,18 @@ export async function listRecentMatchRecords() {
   return readLocalMatches();
 }
 
+export async function listUserMatchRecords(userId: string) {
+  const db = await getFirebaseDb();
+
+  if (db) {
+    const { collection, getDocs, limit, orderBy, query } = await import("firebase/firestore");
+    const snapshot = await getDocs(query(collection(db, "users", userId, "matches"), orderBy("createdAt", "desc"), limit(25)));
+    return snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })) as MatchRecord[];
+  }
+
+  return readLocalMatches().filter((record) => record.userId === userId);
+}
+
 function readLocalMatches(): MatchRecord[] {
   const stored = window.localStorage.getItem(LOCAL_MATCHES_KEY);
   if (!stored) return [];

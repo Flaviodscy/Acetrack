@@ -36,7 +36,7 @@ describe("tennis scoring", () => {
   });
 
   it("keeps the selected server and alternates after each completed game", () => {
-    let match = createMatch(["Flavio", "Tania"]);
+    let match = createMatch(["Player One", "Player Two"]);
     match.server = 1;
 
     match = scoreGame(match, 0);

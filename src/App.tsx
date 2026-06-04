@@ -47,8 +47,8 @@ import {
   X,
   Zap
 } from "lucide-react";
-import { highlights, nearbyPlayers, opponent, recapStats, recentMatches, user } from "./data/mockData";
-import { createMatchRecord } from "./backend/createMatchRecord";
+import { opponent, user } from "./data/starterData";
+import { createMatchRecord, type MatchStatsInput } from "./backend/createMatchRecord";
 import {
   createEmailAccount,
   getCurrentAppUser,
@@ -58,12 +58,12 @@ import {
   signOutAppUser,
   type AppUser
 } from "./backend/authRepository";
-import { getBackendMode, saveMatchRecord } from "./backend/matchRepository";
+import { getBackendMode, listUserMatchRecords, saveMatchRecord } from "./backend/matchRepository";
 import { listPlayerLocations, savePlayerLocation, toNearbyPlayers } from "./backend/nearbyRepository";
 import { createManagedUserProfile, deleteUserProfile, listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
-import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint } from "./lib/tennisScoring";
-import type { AdminUserProfile, NearbyPlayer, UserProfile } from "./types/domain";
+import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint, type MatchState } from "./lib/tennisScoring";
+import type { AdminUserProfile, MatchRecord, NearbyPlayer, UserProfile } from "./types/domain";
 import "./styles.css";
 
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account" | "admin";
@@ -85,10 +85,16 @@ const defaultMatchOptions: MatchOptions = {
   customNames: true,
   scorer: 0,
   server: 0,
-  sideA: [user.name, "Serena"],
-  sideB: [opponent.name, "Venus"],
+  sideA: [user.name, "Partner"],
+  sideB: [opponent.name, "Partner"],
   singles: true,
   soundEnabled: true
+};
+
+const emptyMatchStats: MatchStatsInput = {
+  aces: [0, 0],
+  winners: [0, 0],
+  unforcedErrors: [0, 0]
 };
 
 const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
@@ -105,10 +111,14 @@ export default function App() {
   const [match, setMatch] = usePersistentState("acetrack:live-match", createMatch([user.name, opponent.name]));
   const [matchMode, setMatchMode] = usePersistentState<MatchMode>("acetrack:match-mode", "setup");
   const [matchOptions, setMatchOptions] = usePersistentState<MatchOptions>("acetrack:match-options", defaultMatchOptions);
+  const [matchStartedAt, setMatchStartedAt] = usePersistentState<number | undefined>("acetrack:match-started-at", undefined);
+  const [matchStats, setMatchStats] = usePersistentState<MatchStatsInput>("acetrack:match-stats", emptyMatchStats);
   const [activeFilter, setActiveFilter] = usePersistentState("acetrack:highlight-filter", "All");
   const [socialTab, setSocialTab] = usePersistentState("acetrack:social-tab", "Nearby");
   const [saveStatus, setSaveStatus] = useState("");
   const [profileSaveStatus, setProfileSaveStatus] = useState("");
+  const [matchRecords, setMatchRecords] = useState<MatchRecord[]>([]);
+  const [matchRecordsStatus, setMatchRecordsStatus] = useState("No saved matches yet");
   const [appMessage, setAppMessage] = useState("");
   const [accountStatus, setAccountStatus] = useState("Checking account...");
   const [authPhase, setAuthPhase] = useState<AuthPhase>("loading");
@@ -119,14 +129,10 @@ export default function App() {
 
   const pointDisplay = getPointDisplay(match);
   const sets = getCompletedSets(match);
-  const winnerName = match.winner !== undefined ? (match.winner === 0 ? profile.name : opponent.name) : profile.name;
-  const finalScore = getFinalScore(match) || "6-4, 6-3";
+  const elapsedMatchTime = useElapsedTime(matchStartedAt, matchMode === "playing");
+  const winnerName = match.winner !== undefined ? match.players[match.winner] : "";
+  const finalScore = getFinalScore(match) || getLiveScoreSummary(match);
   const isAdmin = appUser?.email?.toLowerCase() === ADMIN_EMAIL;
-
-  const visibleHighlights = useMemo(() => {
-    if (activeFilter === "All") return highlights;
-    return highlights.filter((item) => item.tag === activeFilter);
-  }, [activeFilter]);
 
   useEffect(() => {
     let isMounted = true;
@@ -170,10 +176,49 @@ export default function App() {
   }, [isAdmin, screen, setScreen]);
 
   useEffect(() => {
+    if (!appUser) {
+      setMatchRecords([]);
+      setMatchRecordsStatus("Sign in to load saved matches");
+      return;
+    }
+
+    refreshMatchRecords(appUser.id);
+  }, [appUser]);
+
+  useEffect(() => {
+    const migratedProfile = sanitizeProfile(profile, appUser);
+    if (migratedProfile !== profile) {
+      setProfile(migratedProfile);
+      if (appUser) {
+        saveUserProfile(appUser.id, migratedProfile).catch((error) => {
+          console.warn("Profile migration save failed.", error);
+        });
+      }
+      return;
+    }
+
+    setMatchOptions((current) => sanitizeMatchOptions(current, migratedProfile.name));
+    setMatch((current) => sanitizeMatchState(current, migratedProfile.name));
+  }, [appUser, profile, setMatch, setMatchOptions, setProfile]);
+
+  useEffect(() => {
     return () => {
       voiceRecognitionRef.current?.abort?.();
     };
   }, []);
+
+  async function refreshMatchRecords(userId: string) {
+    setMatchRecordsStatus("Loading saved matches...");
+    try {
+      const records = await listUserMatchRecords(userId);
+      setMatchRecords(records);
+      setMatchRecordsStatus(records.length ? `${records.length} saved match${records.length === 1 ? "" : "es"}` : "No saved matches yet");
+    } catch (error) {
+      console.warn("Match records failed to load.", error);
+      setMatchRecords([]);
+      setMatchRecordsStatus(getMatchRecordsErrorMessage(error));
+    }
+  }
 
   function showMessage(message: string) {
     setAppMessage(message);
@@ -185,14 +230,21 @@ export default function App() {
     const result = await loadUserProfile(appUser.id);
 
     if (result.profile) {
-      setProfile(result.profile);
+      const nextProfile = sanitizeProfile(result.profile, appUser);
+      setProfile(nextProfile);
       setProfileSaveStatus(result.mode === "firebase" ? "Profile loaded from cloud" : "Profile loaded locally");
-      return result.profile;
+      if (nextProfile !== result.profile) {
+        await saveUserProfile(appUser.id, nextProfile);
+        setProfileSaveStatus("Profile cleaned and saved");
+      }
+      return nextProfile;
     }
 
-    const saveResult = await saveUserProfile(appUser.id, profile);
+    const nextProfile = sanitizeProfile(profile, appUser);
+    setProfile(nextProfile);
+    const saveResult = await saveUserProfile(appUser.id, nextProfile);
     setProfileSaveStatus(saveResult.mode === "firebase" ? "Profile saved to cloud" : "Profile saved locally");
-    return profile;
+    return nextProfile;
   }
 
   function startProfileHydration(appUser: AppUser) {
@@ -202,9 +254,12 @@ export default function App() {
     });
   }
 
-  function addPoint(player: 0 | 1) {
+  function addPoint(player: 0 | 1, pointType: "ace" | "point" = "point") {
     const next = scorePoint(match, player);
     setMatch(next);
+    if (pointType === "ace") {
+      setMatchStats((current) => ({ ...current, aces: incrementPair(current.aces, player) }));
+    }
     playUiSound(player === 0 ? "point" : "opponent", matchOptions.soundEnabled);
     if (next.winner !== undefined) setScreen("complete");
   }
@@ -221,6 +276,8 @@ export default function App() {
     nextMatch.server = getInitialServerSide(normalizedOptions);
     setMatchOptions(normalizedOptions);
     setMatch(nextMatch);
+    setMatchStartedAt(Date.now());
+    setMatchStats(emptyMatchStats);
     setMatchMode("playing");
     setSaveStatus("");
     setScreen("live");
@@ -295,11 +352,15 @@ export default function App() {
       startNewMatch();
       return;
     }
-    if (command.includes("opponent") || command.includes("tania") || command.includes("venus") || command.includes("them")) {
+    if (command.includes("ace")) {
+      addPoint(match.server, "ace");
+      return;
+    }
+    if (command.includes("opponent") || command.includes("player two") || command.includes("their") || command.includes("them") || commandMatchesSide(command, match.players[1])) {
       addPoint(1);
       return;
     }
-    if (command.includes("point") || command.includes("score") || command.includes("flavio") || command.includes("serena") || command.includes("me")) {
+    if (command.includes("point") || command.includes("score") || command.includes("player one") || command.includes("me") || commandMatchesSide(command, match.players[0])) {
       addPoint(0);
     }
   }
@@ -309,7 +370,10 @@ export default function App() {
     const appUser = await getCurrentAppUser();
     setAppUser(appUser);
     setAccountStatus(formatAccountStatus(appUser));
-    const result = await saveMatchRecord(createMatchRecord(match, appUser.id));
+    const record = createMatchRecord(match, appUser.id, elapsedMatchTime, matchStats);
+    const result = await saveMatchRecord(record);
+    setMatchRecords((current) => [record, ...current.filter((item) => item.id !== record.id)].slice(0, 25));
+    setMatchRecordsStatus("Match saved");
     setSaveStatus(result.mode === "firebase" ? "Saved to Firebase" : "Saved locally");
   }
 
@@ -413,7 +477,16 @@ export default function App() {
     <main className="app-shell">
       <div className={`phone-frame ${screen === "live" ? "is-live" : ""}`}>
         <CourtLines />
-        {screen === "home" && <HomeScreen profile={profile} onAction={showMessage} onNavigate={setScreen} onStartMatch={startNewMatch} />}
+        {screen === "home" && (
+          <HomeScreen
+            matchRecords={matchRecords}
+            matchRecordsStatus={matchRecordsStatus}
+            profile={profile}
+            onAction={showMessage}
+            onNavigate={setScreen}
+            onStartMatch={startNewMatch}
+          />
+        )}
         {screen === "live" && matchMode === "setup" && (
           <MatchSetupScreen
             options={matchOptions}
@@ -433,9 +506,10 @@ export default function App() {
             profile={profile}
             server={match.server}
             sets={sets}
+            elapsedTime={elapsedMatchTime}
             onAction={showMessage}
             onPoint={addPoint}
-            onAce={() => addPoint(match.server)}
+            onAce={() => addPoint(match.server, "ace")}
             onSoundToggle={toggleSound}
             onUndo={() => {
               setMatch(undoPoint(match));
@@ -457,10 +531,12 @@ export default function App() {
           <CompleteScreen
             backendMode={getBackendMode()}
             finalScore={finalScore}
+            matchStats={matchStats}
             playerNames={match.players}
             profile={profile}
             saveStatus={saveStatus}
             sets={sets}
+            elapsedTime={elapsedMatchTime}
             winnerName={winnerName}
             onNavigate={setScreen}
             onSave={saveCurrentMatch}
@@ -469,7 +545,9 @@ export default function App() {
         {screen === "highlights" && (
           <HighlightsScreen
             activeFilter={activeFilter}
-            highlights={visibleHighlights}
+            currentMatch={match}
+            matchRecords={matchRecords}
+            matchRecordsStatus={matchRecordsStatus}
             profile={profile}
             onAction={showMessage}
             onFilter={setActiveFilter}
@@ -523,16 +601,23 @@ export default function App() {
 }
 
 function HomeScreen({
+  matchRecords,
+  matchRecordsStatus,
   profile,
   onAction,
   onNavigate,
   onStartMatch
 }: {
+  matchRecords: MatchRecord[];
+  matchRecordsStatus: string;
   profile: UserProfile;
   onAction: (message: string) => void;
   onNavigate: (screen: Screen) => void;
   onStartMatch: () => void;
 }) {
+  const latestMatch = matchRecords[0];
+  const stats = getUserMatchSummary(matchRecords);
+
   return (
     <section className="screen content home-screen">
       <header className="topbar">
@@ -556,28 +641,34 @@ function HomeScreen({
           <h2>Recent Match</h2>
           <button onClick={() => onNavigate("highlights")}>View all</button>
         </div>
-        <div className="recent-match-grid">
-          <div className="mini-player">
-            <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
-            <div><strong>{profile.name}</strong><span>{profile.rating}</span></div>
+        {latestMatch ? (
+          <div className="recent-match-grid real-match-grid">
+            <div className="mini-player">
+              <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
+              <div><strong>{latestMatch.players[0]}</strong><span>{profile.rating}</span></div>
+            </div>
+            <MiniMatchScore record={latestMatch} />
+            <div className="mini-player">
+              <Portrait className={opponent.portrait} initials={getInitials(latestMatch.players[1])} />
+              <div><strong>{latestMatch.players[1]}</strong><span>{latestMatch.durationLabel}</span></div>
+            </div>
+            <div className="winner-mark">{latestMatch.winner ? `${latestMatch.winner} won` : "Saved"}</div>
           </div>
-          <div className="mini-score">
-            <span>SET</span><b>1</b><b>2</b><b>3</b>
-            <strong>6</strong><strong className="won">6</strong><em>-</em>
-            <strong>3</strong><strong>4</strong><em>-</em>
-          </div>
-          <div className="mini-player">
-            <Portrait className={opponent.portrait} initials={opponent.avatar} />
-            <div><strong>{opponent.name}</strong><span>{opponent.rating}</span></div>
-          </div>
-          <div className="winner-mark">Winner</div>
-        </div>
+        ) : (
+          <EmptyState
+            actionLabel="Start Match"
+            icon={Calendar}
+            message={matchRecordsStatus}
+            title="No saved matches yet"
+            onAction={onStartMatch}
+          />
+        )}
       </article>
 
       <article className="progress-card">
-        <Metric label="Matches Played" value="4" delta="+2" />
-        <div className="progress-ring">75%</div>
-        <Metric label="Points Won" value="256" delta="+18" />
+        <Metric label="Matches Played" value={String(stats.played)} />
+        <div className="progress-ring">{stats.winRate}%</div>
+        <Metric label="Games Won" value={String(stats.gamesWon)} />
       </article>
     </section>
   );
@@ -713,6 +804,7 @@ function LiveMatchScreen({
   profile,
   server,
   sets,
+  elapsedTime,
   matchWinner,
   onAction,
   onAce,
@@ -734,6 +826,7 @@ function LiveMatchScreen({
   profile: UserProfile;
   server: 0 | 1;
   sets: ReturnType<typeof getCompletedSets>;
+  elapsedTime: string;
   matchWinner?: 0 | 1;
   onAction: (message: string) => void;
   onAce: () => void;
@@ -787,7 +880,7 @@ function LiveMatchScreen({
 
       <div className="timer-row live-remote-row">
         <span><Radio size={16} /> {voiceStatus}</span>
-        <strong><Clock3 size={16} /> 00:36</strong>
+        <strong><Clock3 size={16} /> {elapsedTime}</strong>
       </div>
       <div className="voice-command-panel">
         {[
@@ -838,8 +931,10 @@ function LiveMatchScreen({
 
 function CompleteScreen({
   backendMode,
+  elapsedTime,
   winnerName,
   finalScore,
+  matchStats,
   playerNames,
   profile,
   sets,
@@ -848,8 +943,10 @@ function CompleteScreen({
   onSave
 }: {
   backendMode: "local" | "firebase";
+  elapsedTime: string;
   winnerName: string;
   finalScore: string;
+  matchStats: MatchStatsInput;
   playerNames: [string, string];
   profile: UserProfile;
   sets: ReturnType<typeof getCompletedSets>;
@@ -861,14 +958,14 @@ function CompleteScreen({
     <section className="screen content complete-screen">
       <div className="celebration">
         <p className="eyebrow"><span className="status-dot" /> Match Complete</p>
-        <h1>Great Match!</h1>
-        <p>Here's how it all went down.</p>
+        <h1>{winnerName ? `${winnerName} wins` : "Match ended"}</h1>
+        <p>{finalScore}</p>
       </div>
 
       <div className="complete-score">
-        <PlayerScore name={playerNames[0]} meta={profile.rating} avatar={profile.avatar} photoDataUrl={profile.photoDataUrl} portrait={profile.portrait} score="6" />
+        <PlayerScore name={playerNames[0]} meta={profile.rating} avatar={profile.avatar} photoDataUrl={profile.photoDataUrl} portrait={profile.portrait} score={getDisplayScoreForSide(sets, 0)} />
         <div className="divider">vs</div>
-        <PlayerScore name={playerNames[1]} meta={opponent.rating} avatar={opponent.avatar} portrait={opponent.portrait} score="3" />
+        <PlayerScore name={playerNames[1]} meta="Opponent" avatar={getInitials(playerNames[1])} portrait={opponent.portrait} score={getDisplayScoreForSide(sets, 1)} />
       </div>
 
       <SetTable playerNames={playerNames} profile={profile} sets={sets} full title="Set by set" />
@@ -876,40 +973,22 @@ function CompleteScreen({
       <div className="match-stats">
         <div className="section-row">
           <p className="eyebrow">Match stats</p>
-          <span>Match time 01:42</span>
+          <span>Match time {elapsedTime}</span>
         </div>
-        {recapStats.map(([label, userValue, opponentValue, balance]) => (
-          <div className="stat-balance" key={label}>
-            <strong>{userValue}</strong>
-            <div>
-              <span>{label}</span>
-              <i><b style={{ width: `${balance}%` }} /></i>
-            </div>
-            <strong>{opponentValue}</strong>
-          </div>
-        ))}
-      </div>
-
-      <div className="achievement-row">
-        {[
-          [Star, "Clutch Performer", "Won 83% of tiebreak points"],
-          [Target, "Baseline Boss", "68% of points won from the baseline"],
-          [Zap, "Momentum Maker", "Won 5 of the last 6 games"]
-        ].map(([Icon, title, copy]) => (
-          <article className="achievement-card" key={String(title)}>
-            <Icon size={20} />
-            <strong>{String(title)}</strong>
-            <p>{String(copy)}</p>
-          </article>
-        ))}
+        <StatBalance label="Aces" values={matchStats.aces} />
+        <StatBalance label="Winners" values={matchStats.winners} />
+        <StatBalance label="Unforced Errors" values={matchStats.unforcedErrors} />
+        {!hasTrackedStats(matchStats) && (
+          <p className="save-status">Only scored points were tracked. Use Ace during the match to record ace stats.</p>
+        )}
       </div>
 
       <div className="stack">
         <button className="hero-action compact" onClick={onSave}><Bookmark size={20} /> Save Match</button>
-        <p className="save-status">{saveStatus || `Backend: ${backendMode === "firebase" ? "Firebase" : "local mock"}`}</p>
+        <p className="save-status">{saveStatus || `Backend: ${backendMode === "firebase" ? "Firebase" : "local"}`}</p>
         <div className="button-pair">
           <button className="ghost-button" onClick={() => onNavigate("highlights")}><Share2 size={18} /> Create Share Card</button>
-          <button className="ghost-button" onClick={() => onNavigate("highlights")}><Play size={18} /> View Highlights</button>
+          <button className="ghost-button" onClick={() => onNavigate("highlights")}><Play size={18} /> View Match Cards</button>
         </div>
       </div>
     </section>
@@ -918,21 +997,32 @@ function CompleteScreen({
 
 function HighlightsScreen({
   activeFilter,
-  highlights,
+  currentMatch,
+  matchRecords,
+  matchRecordsStatus,
   profile,
   onAction,
   onFilter
 }: {
   activeFilter: string;
-  highlights: typeof import("./data/mockData").highlights;
+  currentMatch: MatchState;
+  matchRecords: MatchRecord[];
+  matchRecordsStatus: string;
   profile: UserProfile;
   onAction: (message: string) => void;
   onFilter: (filter: string) => void;
 }) {
   const [shareCard, setShareCard] = useState("");
+  const currentFilter = ["All", "Wins", "Losses"].includes(activeFilter) ? activeFilter : "All";
+  const filteredRecords = useMemo(() => {
+    if (currentFilter === "Wins") return matchRecords.filter((record) => record.winner === record.players[0]);
+    if (currentFilter === "Losses") return matchRecords.filter((record) => record.winner === record.players[1]);
+    return matchRecords;
+  }, [currentFilter, matchRecords]);
+  const shareRecord = matchRecords[0] ?? createUnsavedMatchPreview(currentMatch);
 
   function generateShareCard() {
-    const card = createShareCardSvg(profile);
+    const card = createShareCardSvg(profile, shareRecord);
     setShareCard(card);
     onAction("Share card generated");
   }
@@ -940,19 +1030,19 @@ function HighlightsScreen({
   return (
     <section className="screen content highlights-screen">
       <header className="simple-header">
-        <h1>Highlights</h1>
-        <p>Your best moments from the match.</p>
+        <h1>Match Cards</h1>
+        <p>Saved matches and share cards from real scoring data.</p>
       </header>
       <article className="feature-card">
         <div>
           <p className="eyebrow">Share your match</p>
-          <h2>Create a match card or versus poster.</h2>
-          <p>Share your win. Inspire your game.</p>
+          <h2>Create a match card.</h2>
+          <p>{shareRecord.finalScore === "In progress" ? "Score a match first, or generate a draft from the current board." : shareRecord.finalScore}</p>
         </div>
         <div className="share-preview">
           <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
           <span>vs</span>
-          <Portrait className={opponent.portrait} initials={opponent.avatar} />
+          <Portrait className={opponent.portrait} initials={getInitials(shareRecord.players[1])} />
         </div>
         <button onClick={generateShareCard}>Generate Share Card <ArrowRight size={17} /></button>
       </article>
@@ -970,34 +1060,41 @@ function HighlightsScreen({
         </article>
       )}
       <div className="section-row">
-        <h2>Highlights</h2>
-        <button className="text-button" onClick={() => onAction("Select mode enabled")}>Select</button>
+        <h2>Saved Matches</h2>
+        <button className="text-button" onClick={() => onAction(matchRecordsStatus)}>Status</button>
       </div>
       <div className="filter-row">
-        {["All", "Ace", "Rally", "Winner", "Match Point"].map((filter) => (
-          <button className={filter === activeFilter ? "active" : ""} key={filter} onClick={() => onFilter(filter)}>
+        {["All", "Wins", "Losses"].map((filter) => (
+          <button className={filter === currentFilter ? "active" : ""} key={filter} onClick={() => onFilter(filter)}>
             {filter}
           </button>
         ))}
-        <button className="filter-icon" aria-label="Highlight filters" onClick={() => onAction("Highlight filters ready")}><SlidersHorizontal size={20} /></button>
+        <button className="filter-icon" aria-label="Match filters" onClick={() => onAction("Match filters ready")}><SlidersHorizontal size={20} /></button>
       </div>
       <div className="highlight-grid">
-        {highlights.map((item) => (
-          <article className="highlight-card" key={item.id}>
-            <div className={`thumb ${item.tone}`}>
-              <span><Play size={16} /> {item.duration}</span>
-              <b>{item.tag}</b>
+        {filteredRecords.map((record) => (
+          <article className="highlight-card real-match-card" key={record.id}>
+            <div className="thumb lime">
+              <span><Trophy size={16} /> {record.durationLabel}</span>
+              <b>{record.winner ? "Saved" : "Open"}</b>
             </div>
             <div>
-              <h3>{item.title}</h3>
-              <p>{item.score}</p>
+              <h3>{record.players[0]} vs {record.players[1]}</h3>
+              <p>{record.finalScore} · {formatMatchDate(record.createdAt)}</p>
             </div>
             <div className="card-icons">
-              <button aria-label={`Favorite ${item.title}`} onClick={() => onAction(`${item.title} favorited`)}><Heart size={18} /></button>
-              <button aria-label={`Options for ${item.title}`} onClick={() => onAction(`Options opened for ${item.title}`)}><MoreHorizontal size={18} /></button>
+              <button aria-label={`Share ${record.players[0]} vs ${record.players[1]}`} onClick={() => { setShareCard(createShareCardSvg(profile, record)); onAction("Share card generated"); }}><Share2 size={18} /></button>
+              <button aria-label={`Options for ${record.players[0]} vs ${record.players[1]}`} onClick={() => onAction("Match options ready")}><MoreHorizontal size={18} /></button>
             </div>
           </article>
         ))}
+        {!filteredRecords.length && (
+          <EmptyState
+            icon={Video}
+            message={matchRecordsStatus}
+            title="No saved match cards yet"
+          />
+        )}
       </div>
     </section>
   );
@@ -1017,14 +1114,9 @@ function SocialScreen({
   onTab: (tab: string) => void;
 }) {
   const [nearbyStatus, setNearbyStatus] = useState("Share GPS to find friends nearby");
-  const [nearbyList, setNearbyList] = useState<NearbyPlayer[]>(getMockNearbyPlayers());
-  const [friendRequests, setFriendRequests] = useState([
-    { id: "req-1", name: "Tania Lopes", avatar: "TL", portrait: "portrait-four", rating: "NTRP 4.0", message: "Wants to play this week" },
-    { id: "req-2", name: "Rafael Costa", avatar: "RC", portrait: "portrait-five", rating: "NTRP 3.5", message: "Sent a ladder request" }
-  ]);
-  const [friends, setFriends] = useState([
-    { id: "friend-1", name: "Jamie Carter", avatar: "JC", portrait: "portrait-two", rating: "NTRP 4.0" }
-  ]);
+  const [nearbyList, setNearbyList] = useState<NearbyPlayer[]>([]);
+  const [friendRequests, setFriendRequests] = useState<Array<{ id: string; name: string; avatar: string; portrait: string; rating: string; message: string }>>([]);
+  const [friends, setFriends] = useState<Array<{ id: string; name: string; avatar: string; portrait: string; rating: string }>>([]);
   const [isLocating, setIsLocating] = useState(false);
   const [gpsAlwaysOn, setGpsAlwaysOn] = usePersistentState("acetrack:gps-always-on", false);
   const [radiusKm, setRadiusKm] = useState(15);
@@ -1056,7 +1148,7 @@ function SocialScreen({
     await savePlayerLocation(activeUser.id, profile, position.coords);
     const liveLocations = await listPlayerLocations();
     const livePlayers = toNearbyPlayers(liveLocations, position.coords, activeUser.id);
-    const combined = rankNearbyPlayers([...livePlayers, ...getMockNearbyPlayers(position.coords)]);
+    const combined = rankNearbyPlayers(livePlayers);
     setNearbyList(combined);
     setNearbyStatus(livePlayers.length ? `${livePlayers.length} live players found nearby` : "GPS is on. Waiting for friends nearby");
     if (announce) onAction("Nearby players updated");
@@ -1144,7 +1236,15 @@ function SocialScreen({
                 <button onClick={() => onAction(`Challenge sent to ${player.name}`)}>Challenge</button>
               </article>
             ))}
-            {!visibleNearbyPlayers.length && <p className="admin-empty">No players inside {radiusKm} km yet.</p>}
+            {!visibleNearbyPlayers.length && (
+              <EmptyState
+                icon={MapPin}
+                message={gpsAlwaysOn ? "Ask your friends to open AceTrack and enable GPS too." : "Enable GPS to publish your location and load nearby real players."}
+                title={`No players inside ${radiusKm} km yet`}
+                actionLabel={gpsAlwaysOn ? "Update GPS" : "Use GPS"}
+                onAction={refreshNearbyFromGps}
+              />
+            )}
           </div>
         </>
       )}
@@ -1158,6 +1258,13 @@ function SocialScreen({
               <button onClick={() => onAction(`Challenge sent to ${friend.name}`)}>Challenge</button>
             </article>
           ))}
+          {!friends.length && (
+            <EmptyState
+              icon={Users}
+              message="Accepted players will appear here once friend requests exist."
+              title="No friends yet"
+            />
+          )}
         </div>
       )}
 
@@ -1173,12 +1280,18 @@ function SocialScreen({
               </div>
             </article>
           ))}
-          {!friendRequests.length && <p className="admin-empty">No pending requests.</p>}
+          {!friendRequests.length && (
+            <EmptyState
+              icon={UserPlus}
+              message="Friend requests are not connected to a backend collection yet."
+              title="No pending requests"
+            />
+          )}
         </div>
       )}
       <p className="list-label">Local ladder</p>
       <article className="ladder-card">
-        <div><span>Your Rank</span><strong>23 <small>of 148</small></strong><b>2,750 PTS</b></div>
+        <div><span>Your Rank</span><strong>-- <small>of --</small></strong><b>{profile.level * 100} PTS</b></div>
         <div className="ladder-steps">
           {["Rising Ace", "Court Challenger", "Match Master", "Local Legend"].map((step, index) => (
             <span className={index === 1 ? "active" : ""} key={step}><Trophy size={20} />{step}</span>
@@ -1288,6 +1401,14 @@ function ProfileScreen({
               </select>
             </label>
             <label>
+              <span>Handedness</span>
+              <input value={draft.hand} onChange={(event) => updateDraft("hand", event.target.value)} />
+            </label>
+            <label>
+              <span>Goals / style</span>
+              <input value={draft.favoritePro} onChange={(event) => updateDraft("favoritePro", event.target.value)} placeholder="Baseline, serve + volley, fitness..." />
+            </label>
+            <label>
               <span>Level</span>
               <input min="1" max="99" type="number" value={draft.level} onChange={(event) => updateDraft("level", Number(event.target.value))} />
             </label>
@@ -1302,6 +1423,10 @@ function ProfileScreen({
             <label>
               <span>Racket</span>
               <input value={draft.equipment.racket} onChange={(event) => updateEquipment("racket", event.target.value)} />
+            </label>
+            <label>
+              <span>Head size</span>
+              <input value={draft.equipment.headSize} onChange={(event) => updateEquipment("headSize", event.target.value)} />
             </label>
             <label>
               <span>Strings</span>
@@ -1374,15 +1499,15 @@ function ProfileScreen({
 
       <article className="pro-card">
         <div className="section-row">
-          <h2>Compare with pros</h2>
-          <button className="text-button" onClick={() => onAction("Pro comparison opened")}>View all</button>
+          <h2>Performance profile</h2>
+          <button className="text-button" onClick={() => setIsEditing(true)}>Edit</button>
         </div>
         <div className="pro-content">
-          <Portrait className="portrait-pro" initials="CA" />
-          <div><strong>Carlos Alcaraz</strong><span>Demo profile</span></div>
+          <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
+          <div><strong>{profile.hand}</strong><span>{profile.favoritePro || "Add your goals and style"}</span></div>
           <div className="pro-bars">
-            {["FH", "BH", "SRV", "VOL", "SLI", "MOV"].map((label, index) => (
-              <span key={label}><b>{label}</b><i style={{ height: `${58 + index * 5}%` }} /></span>
+            {profile.skills.slice(0, 6).map(([label, value]) => (
+              <span key={label}><b>{getSkillCode(label)}</b><i style={{ height: `${Math.max(8, value)}%` }} /></span>
             ))}
           </div>
         </div>
@@ -1834,6 +1959,42 @@ function InfoCard({ icon: Icon, title, value, onClick }: { icon: typeof Home; ti
   );
 }
 
+function EmptyState({
+  actionLabel,
+  icon: Icon,
+  message,
+  title,
+  onAction
+}: {
+  actionLabel?: string;
+  icon: typeof Home;
+  message: string;
+  title: string;
+  onAction?: () => void;
+}) {
+  return (
+    <article className="empty-state">
+      <span><Icon size={22} /></span>
+      <strong>{title}</strong>
+      <p>{message}</p>
+      {actionLabel && onAction && <button className="ghost-button" onClick={onAction}>{actionLabel}</button>}
+    </article>
+  );
+}
+
+function MiniMatchScore({ record }: { record: MatchRecord }) {
+  const displaySets = record.sets.filter((set) => set.games[0] > 0 || set.games[1] > 0 || set.winner !== undefined).slice(0, 3);
+  const sets = displaySets.length ? displaySets : [{ games: [0, 0] as [number, number] }];
+
+  return (
+    <div className="mini-score">
+      <span>SET</span>{sets.map((_, index) => <b key={`h-${index}`}>{index + 1}</b>)}
+      {sets.map((set, index) => <strong className={set.winner === 0 ? "won" : ""} key={`a-${index}`}>{set.games[0]}</strong>)}
+      {sets.map((set, index) => <strong className={set.winner === 1 ? "won" : ""} key={`b-${index}`}>{set.games[1]}</strong>)}
+    </div>
+  );
+}
+
 function PlayerScore({
   name,
   meta,
@@ -1857,6 +2018,22 @@ function PlayerScore({
         <p>{meta}</p>
       </div>
       <strong>{score}</strong>
+    </div>
+  );
+}
+
+function StatBalance({ label, values }: { label: string; values: [number, number] }) {
+  const total = values[0] + values[1];
+  const balance = total ? Math.round((values[0] / total) * 100) : 50;
+
+  return (
+    <div className="stat-balance">
+      <strong>{values[0]}</strong>
+      <div>
+        <span>{label}</span>
+        <i><b style={{ width: `${balance}%` }} /></i>
+      </div>
+      <strong>{values[1]}</strong>
     </div>
   );
 }
@@ -2047,38 +2224,98 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
   });
 }
 
-function getMockNearbyPlayers(origin?: GeolocationCoordinates): NearbyPlayer[] {
-  const baseLat = origin?.latitude ?? 43.6532;
-  const baseLng = origin?.longitude ?? -79.3832;
-  const offsets = [
-    [0.012, -0.009],
-    [-0.021, 0.014],
-    [0.026, 0.02],
-    [-0.034, -0.018],
-    [0.045, 0.03]
-  ];
-
-  return nearbyPlayers.map((player, index) => {
-    const mockDistanceMiles = Number.parseFloat(player.distance);
-    const distanceKm = (Number.isFinite(mockDistanceMiles) ? mockDistanceMiles : index + 1) * 1.609344;
-    return {
-      ...player,
-      distance: `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0)} km`,
-      distanceKm,
-      distanceMiles: distanceKm / 1.609344,
-      id: `mock-${player.name}`,
-      isLive: false,
-      lat: baseLat + offsets[index][0],
-      lng: baseLng + offsets[index][1],
-      rating: "NTRP demo"
-    };
-  });
-}
-
 function rankNearbyPlayers(players: NearbyPlayer[]) {
   return [...players]
     .sort((a, b) => a.distanceKm - b.distanceKm)
     .map((player, index) => ({ ...player, rank: index + 1 }));
+}
+
+function useElapsedTime(startedAt: number | undefined, running: boolean) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!startedAt || !running) {
+      setNow(Date.now());
+      return;
+    }
+
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, [running, startedAt]);
+
+  return formatDuration(startedAt ? Math.max(0, now - startedAt) : 0);
+}
+
+function formatDuration(milliseconds: number) {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function incrementPair(pair: [number, number], player: 0 | 1): [number, number] {
+  return player === 0 ? [pair[0] + 1, pair[1]] : [pair[0], pair[1] + 1];
+}
+
+function hasTrackedStats(stats: MatchStatsInput) {
+  return [...stats.aces, ...stats.winners, ...stats.unforcedErrors].some((value) => value > 0);
+}
+
+function getDisplayScoreForSide(sets: ReturnType<typeof getCompletedSets>, side: 0 | 1) {
+  const meaningfulSets = sets.filter((set) => set.games[0] > 0 || set.games[1] > 0 || set.winner !== undefined);
+  const latestSet = meaningfulSets.at(-1);
+  if (!latestSet) return "0";
+  return String(latestSet.games[side]);
+}
+
+function getLiveScoreSummary(match: MatchState) {
+  const sets = getCompletedSets(match).filter((set) => set.games[0] > 0 || set.games[1] > 0 || set.winner !== undefined);
+  if (!sets.length) return "0-0";
+  return sets.map((set) => `${set.games[0]}-${set.games[1]}`).join(", ");
+}
+
+function createUnsavedMatchPreview(match: MatchState): MatchRecord {
+  return {
+    id: "current-match",
+    userId: "current",
+    createdAt: new Date().toISOString(),
+    players: match.players,
+    winner: match.winner === undefined ? undefined : match.players[match.winner],
+    finalScore: getFinalScore(match) || getLiveScoreSummary(match),
+    durationLabel: "Draft",
+    sets: getCompletedSets(match),
+    scoringState: match,
+    stats: emptyMatchStats
+  };
+}
+
+function getUserMatchSummary(records: MatchRecord[]) {
+  const played = records.length;
+  const wins = records.filter((record) => record.winner === record.players[0]).length;
+  const gamesWon = records.reduce((sum, record) => (
+    sum + record.sets.reduce((setSum, set) => setSum + set.games[0], 0)
+  ), 0);
+  const winRate = played ? Math.round((wins / played) * 100) : 0;
+
+  return { gamesWon, played, winRate };
+}
+
+function formatMatchDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Saved match";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(date);
+}
+
+function commandMatchesSide(command: string, sideName: string) {
+  return sideName
+    .toLowerCase()
+    .split("/")
+    .flatMap((part) => part.trim().split(/\s+/))
+    .filter((part) => part.length > 2)
+    .some((part) => command.includes(part));
 }
 
 function getLocationErrorMessage(error: unknown) {
@@ -2087,6 +2324,102 @@ function getLocationErrorMessage(error: unknown) {
   if (code === 2) return "GPS position is unavailable";
   if (code === 3) return "GPS timed out. Try again outside";
   return error instanceof Error ? error.message : "Could not update nearby players";
+}
+
+const demoNames = new Set([
+  "alex morgan",
+  "jamie carter",
+  "ethan brooks",
+  "olivia martinez",
+  "lucas green",
+  "maya patel",
+  "noah kim",
+  "nora kim",
+  "carlos alcaraz",
+  "serena",
+  "venus"
+]);
+
+function sanitizeProfile(profile: UserProfile, appUser?: AppUser) {
+  const favoritePro = profile.favoritePro || "";
+  if (!isDemoName(profile.name) && !favoritePro.toLowerCase().includes("demo")) return profile;
+
+  const name = getNameFromEmail(appUser?.email ?? undefined) || (isDemoName(profile.name) ? user.name : profile.name);
+  return normalizeProfileDraft({
+    ...profile,
+    avatar: getInitials(name),
+    equipment: isDemoName(profile.name) ? user.equipment : profile.equipment,
+    favoritePro: favoritePro.toLowerCase().includes("demo") ? "" : favoritePro,
+    hand: profile.hand || user.hand,
+    level: isDemoName(profile.name) ? user.level : profile.level,
+    location: isDemoLocation(profile.location) ? user.location : profile.location,
+    name,
+    portrait: profile.portrait || user.portrait,
+    rating: isDemoName(profile.name) ? user.rating : profile.rating,
+    shortName: getShortName(name),
+    skills: isDemoName(profile.name) ? user.skills : profile.skills,
+    xp: isDemoName(profile.name) ? user.xp : profile.xp,
+    xpText: isDemoName(profile.name) ? user.xpText : profile.xpText
+  });
+}
+
+function sanitizeMatchOptions(options: MatchOptions, profileName: string) {
+  const sideA: [string, string] = [
+    isDemoName(options.sideA[0]) || !options.sideA[0].trim() ? profileName : options.sideA[0],
+    isDemoName(options.sideA[1]) || !options.sideA[1].trim() ? "Partner" : options.sideA[1]
+  ];
+  const sideB: [string, string] = [
+    isDemoName(options.sideB[0]) || !options.sideB[0].trim() ? opponent.name : options.sideB[0],
+    isDemoName(options.sideB[1]) || !options.sideB[1].trim() ? "Partner" : options.sideB[1]
+  ];
+
+  if (
+    sideA[0] === options.sideA[0] &&
+    sideA[1] === options.sideA[1] &&
+    sideB[0] === options.sideB[0] &&
+    sideB[1] === options.sideB[1]
+  ) {
+    return options;
+  }
+
+  return { ...options, sideA, sideB };
+}
+
+function sanitizeMatchState(match: MatchState, profileName: string) {
+  const players: [string, string] = [
+    isDemoName(match.players[0]) || !match.players[0].trim() ? profileName : match.players[0],
+    isDemoName(match.players[1]) || !match.players[1].trim() ? opponent.name : match.players[1]
+  ];
+
+  if (players[0] === match.players[0] && players[1] === match.players[1]) return match;
+  return { ...match, players };
+}
+
+function isDemoName(name: string) {
+  return demoNames.has(name.trim().toLowerCase());
+}
+
+function isDemoLocation(location: string) {
+  return ["san diego, ca", "local club"].includes(location.trim().toLowerCase());
+}
+
+function getNameFromEmail(email?: string) {
+  if (!email) return "";
+  const localPart = email.split("@")[0]?.trim();
+  if (!localPart) return "";
+  return localPart
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ") || "";
+}
+
+function getMatchRecordsErrorMessage(error: unknown) {
+  const detail = error instanceof Error ? error.message : String(error ?? "");
+  if (detail.includes("permission-denied") || detail.includes("Missing or insufficient permissions")) {
+    return "Saved matches need Firebase permission. Sign out, sign in, and try again.";
+  }
+  return detail || "Could not load saved matches.";
 }
 
 function getAdminLoadErrorMessage(error: unknown) {
@@ -2149,6 +2482,11 @@ function getShortName(name: string) {
   return last ? `${first[0]}. ${last}` : first;
 }
 
+function getSkillCode(label: string) {
+  const code = label.replace(/[^a-z]/gi, "").slice(0, 3).toUpperCase();
+  return code || "SKL";
+}
+
 function stripAdminFields(profile: AdminUserProfile): UserProfile {
   const { accountType: _accountType, email: _email, userId: _userId, updatedAt: _updatedAt, ...userProfile } = profile;
   return userProfile;
@@ -2180,13 +2518,15 @@ function normalizeProfileDraft(profile: UserProfile): UserProfile {
   };
 }
 
-function createShareCardSvg(profile: UserProfile) {
-  const safeName = escapeSvg(profile.name);
-  const safeOpponent = escapeSvg(opponent.name);
+function createShareCardSvg(profile: UserProfile, record: MatchRecord) {
+  const safeName = escapeSvg(record.players[0]);
+  const safeOpponent = escapeSvg(record.players[1]);
   const safeRating = escapeSvg(profile.rating);
-  const safeInitials = escapeSvg(profile.avatar);
-  const safeOpponentInitials = escapeSvg(opponent.avatar);
+  const safeInitials = escapeSvg(record.players[0] === profile.name ? profile.avatar : getInitials(record.players[0]));
+  const safeOpponentInitials = escapeSvg(getInitials(record.players[1]));
   const safeLocation = escapeSvg(profile.location);
+  const safeFinalScore = escapeSvg(record.finalScore);
+  const safeWinner = escapeSvg(record.winner || "Saved match");
 
   const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
@@ -2217,12 +2557,12 @@ function createShareCardSvg(profile: UserProfile) {
     <text x="310" y="700" fill="#161b16" text-anchor="middle" font-family="Inter, Arial" font-size="42" font-weight="900">${safeName}</text>
     <text x="310" y="752" fill="#697365" text-anchor="middle" font-family="Inter, Arial" font-size="28">${safeRating}</text>
     <text x="770" y="700" fill="#161b16" text-anchor="middle" font-family="Inter, Arial" font-size="42" font-weight="900">${safeOpponent}</text>
-    <text x="770" y="752" fill="#697365" text-anchor="middle" font-family="Inter, Arial" font-size="28">${escapeSvg(opponent.rating)}</text>
+    <text x="770" y="752" fill="#697365" text-anchor="middle" font-family="Inter, Arial" font-size="28">Opponent</text>
   </g>
   <text x="92" y="990" fill="#697365" font-family="Inter, Arial" font-size="30" font-weight="800">FINAL SCORE</text>
-  <text x="92" y="1080" fill="#161b16" font-family="Inter, Arial" font-size="92" font-weight="900">6 - 3</text>
+  <text x="92" y="1080" fill="#161b16" font-family="Inter, Arial" font-size="72" font-weight="900">${safeFinalScore}</text>
   <rect x="676" y="996" width="236" height="72" rx="36" fill="#cdea5f"/>
-  <text x="794" y="1044" fill="#1e2b11" text-anchor="middle" font-family="Inter, Arial" font-size="30" font-weight="900">WINNER</text>
+  <text x="794" y="1044" fill="#1e2b11" text-anchor="middle" font-family="Inter, Arial" font-size="26" font-weight="900">${safeWinner}</text>
   <text x="92" y="1240" fill="#697365" font-family="Inter, Arial" font-size="28">Generated by AceTrack</text>
 </svg>`;
 
