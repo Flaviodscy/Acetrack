@@ -6619,6 +6619,499 @@ body,
   display: none;
 }
 
+/* Desktop web shell: use the browser like a real app, while keeping mobile phone-first. */
+@media (min-width: 1024px) {
+  body {
+    background:
+      radial-gradient(circle at 10% 10%, rgba(205, 234, 95, 0.16), transparent 28%),
+      radial-gradient(circle at 90% 6%, rgba(232, 246, 223, 0.55), transparent 26%),
+      linear-gradient(135deg, #eef3e7 0%, #f8fbf1 100%);
+  }
+
+  .app-shell:not(.is-live-shell) {
+    min-height: 100dvh;
+    place-items: stretch;
+    padding: 16px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) {
+    justify-self: center;
+    align-self: center;
+    width: min(calc(100vw - 32px), 1520px);
+    height: calc(100dvh - 32px);
+    max-height: none;
+    min-height: 720px;
+    border-radius: 34px;
+    background:
+      radial-gradient(circle at 18% 12%, rgba(205, 234, 95, 0.12), transparent 24%),
+      linear-gradient(180deg, rgba(255, 254, 248, 0.98) 0%, rgba(249, 252, 241, 0.98) 100%);
+    box-shadow: 0 28px 90px rgba(70, 83, 55, 0.18);
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .court-lines {
+    inset: 40px 48px 40px 176px;
+    height: auto;
+    opacity: 0.5;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen {
+    height: 100%;
+    padding: 48px 58px 52px 176px;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen.content {
+    gap: 24px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav {
+    top: 24px;
+    bottom: 24px;
+    left: 24px;
+    right: auto;
+    width: 116px;
+    max-height: none;
+    grid-template-columns: 1fr !important;
+    grid-auto-rows: minmax(72px, auto);
+    align-content: start;
+    gap: 10px;
+    padding: 14px 10px;
+    border-radius: 30px;
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 22px 58px rgba(70, 83, 55, 0.14);
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav::before {
+    content: "AceTrack";
+    min-height: 58px;
+    display: grid;
+    place-items: center;
+    border-radius: 22px;
+    background: linear-gradient(180deg, #f4fad8, rgba(255, 255, 255, 0.72));
+    color: #1f2c12;
+    font-size: 0.8rem;
+    font-weight: 950;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav button {
+    min-height: 72px;
+    width: 100%;
+    padding: 10px 8px;
+    border-radius: 22px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav button.active {
+    background: linear-gradient(180deg, #eff8ca, rgba(255, 255, 255, 0.82));
+    box-shadow: inset 0 0 0 1px rgba(159, 198, 58, 0.2);
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav span {
+    font-size: 0.72rem;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .toast {
+    left: auto;
+    right: 42px;
+    bottom: 36px;
+    max-width: 420px;
+    transform: none;
+  }
+
+  .challenge-banner {
+    left: auto;
+    right: 42px;
+    bottom: 36px;
+    width: min(560px, calc(100% - 228px));
+  }
+
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen,
+  .admin-screen,
+  .complete-screen {
+    grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
+    column-gap: clamp(32px, 4.2vw, 72px);
+    row-gap: 22px;
+    align-items: start;
+  }
+
+  .home-screen .topbar,
+  .profile-screen .profile-hero,
+  .profile-screen .home-area-card,
+  .profile-screen .account-card,
+  .social-screen .simple-header,
+  .social-screen .ladder-card,
+  .highlights-screen .simple-header,
+  .account-screen .simple-header,
+  .admin-screen .admin-header,
+  .admin-screen .admin-stats,
+  .admin-screen .admin-search,
+  .admin-screen .admin-refresh,
+  .admin-screen .admin-create-toggle,
+  .admin-screen .admin-create-card,
+  .complete-screen .celebration,
+  .complete-screen .complete-score,
+  .complete-screen > .set-table {
+    grid-column: 1;
+  }
+
+  .home-screen .section-title,
+  .home-screen .start-grid,
+  .home-screen .challenge-card,
+  .home-screen .recent-match-card,
+  .home-screen .progress-card,
+  .profile-screen .edit-profile-card,
+  .profile-screen .level-row,
+  .profile-screen .flat-section,
+  .profile-screen .pro-card,
+  .social-screen .tabs,
+  .social-screen .distance-control-card,
+  .social-screen .gps-card,
+  .social-screen .list-label,
+  .social-screen .player-list,
+  .social-screen .request-list,
+  .highlights-screen .feature-card,
+  .highlights-screen .generated-share-card,
+  .highlights-screen > .section-row,
+  .highlights-screen .filter-row,
+  .highlights-screen .highlight-grid,
+  .account-screen .login-card,
+  .account-screen > .ghost-button,
+  .admin-screen .admin-layout,
+  .complete-screen .match-stats,
+  .complete-screen .feedback-card,
+  .complete-screen .stack {
+    grid-column: 2;
+  }
+
+  .home-screen .topbar,
+  .profile-screen .profile-hero,
+  .social-screen .simple-header,
+  .highlights-screen .simple-header,
+  .account-screen .simple-header,
+  .admin-screen .admin-header,
+  .complete-screen .celebration {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    align-self: start;
+    padding-top: 4px;
+  }
+
+  .home-screen .topbar,
+  .social-screen .simple-header,
+  .highlights-screen .simple-header,
+  .account-screen .simple-header,
+  .admin-screen .admin-header,
+  .complete-screen .celebration {
+    background: linear-gradient(180deg, rgba(255, 254, 248, 0.96) 0%, rgba(255, 254, 248, 0.72) 72%, rgba(255, 254, 248, 0) 100%);
+  }
+
+  .home-screen .topbar {
+    display: grid;
+    gap: 18px;
+    justify-items: start;
+  }
+
+  .home-screen h1,
+  .simple-header h1,
+  .complete-screen .celebration h1 {
+    max-width: 10ch;
+    font-size: clamp(3rem, 4.4vw, 5.35rem);
+    line-height: 1.02;
+  }
+
+  .hero-copy,
+  .simple-header p:not(.eyebrow),
+  .admin-header p:not(.eyebrow) {
+    max-width: 34ch;
+    font-size: 1.08rem;
+    line-height: 1.55;
+  }
+
+  .start-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .info-card {
+    min-height: 172px;
+    padding: 22px;
+    border-radius: 26px;
+  }
+
+  .recent-match-card,
+  .progress-card,
+  .feature-card,
+  .generated-share-card,
+  .gps-card,
+  .distance-control-card,
+  .ladder-card,
+  .flat-section,
+  .account-card,
+  .login-card,
+  .admin-layout,
+  .match-stats,
+  .feedback-card,
+  .complete-score {
+    border-radius: 28px;
+  }
+
+  .progress-card {
+    min-height: 154px;
+  }
+
+  .tabs,
+  .filter-row {
+    margin: 0;
+    overflow: visible;
+    flex-wrap: wrap;
+  }
+
+  .filter-row button,
+  .tabs button {
+    min-height: 44px;
+  }
+
+  .highlights-screen .feature-card {
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 0.42fr);
+    align-items: center;
+    min-height: 250px;
+    margin: 0;
+    padding: 28px;
+    overflow: hidden;
+  }
+
+  .highlights-screen .feature-card button {
+    width: fit-content;
+    min-width: 238px;
+    justify-self: start;
+  }
+
+  .highlights-screen .share-preview {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: stretch;
+    width: 100%;
+    height: auto;
+    min-height: 180px;
+  }
+
+  .highlights-screen .highlight-grid {
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 14px;
+  }
+
+  .highlight-card.real-match-card {
+    min-height: 148px;
+    align-items: stretch;
+  }
+
+  .highlight-grid > .empty-state {
+    grid-column: 1 / -1;
+  }
+
+  .generated-share-card img {
+    max-height: min(48vh, 460px);
+    object-fit: contain;
+  }
+
+  .social-screen .ladder-card {
+    margin-top: 8px;
+  }
+
+  .social-screen .player-list,
+  .social-screen .request-list {
+    gap: 12px;
+  }
+
+  .social-screen .player-row {
+    grid-template-columns: 34px 58px minmax(0, 1fr) minmax(112px, auto);
+    padding: 14px;
+  }
+
+  .social-screen .player-row .streak,
+  .social-screen .player-row .points,
+  .social-screen .player-row .player-actions {
+    grid-column: 4;
+    justify-self: stretch;
+  }
+
+  .social-screen .player-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .social-screen .player-actions button {
+    width: 100%;
+  }
+
+  .profile-screen .profile-hero {
+    text-align: left;
+    grid-template-columns: 94px minmax(0, 1fr);
+    padding: 0;
+  }
+
+  .profile-screen .profile-hero .avatar.large {
+    margin: 0;
+  }
+
+  .profile-screen .profile-hero .account-button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .profile-screen .home-area-card,
+  .profile-screen .account-card {
+    position: relative;
+    z-index: 1;
+  }
+
+  .profile-screen .edit-profile-card {
+    grid-column: 1 / -1;
+  }
+
+  .profile-screen .skill,
+  .skill-editor-row {
+    grid-template-columns: minmax(120px, 0.85fr) minmax(0, 1.35fr) 52px;
+  }
+
+  .complete-screen .complete-score,
+  .complete-screen > .set-table {
+    align-self: start;
+  }
+
+  .complete-screen .feedback-card {
+    overflow: visible;
+  }
+
+  .admin-screen .admin-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    align-self: start;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .admin-list {
+    max-height: min(38vh, 360px);
+    overflow: auto;
+    padding-right: 4px;
+  }
+
+  .admin-editor {
+    border-radius: 28px;
+  }
+
+  .auth-frame {
+    justify-self: center;
+    align-self: center;
+    width: min(calc(100vw - 32px), 1120px);
+    height: min(calc(100dvh - 32px), 840px);
+    max-height: none;
+    min-height: 640px;
+    border-radius: 34px;
+  }
+
+  .auth-frame .screen {
+    height: 100%;
+    padding: 58px;
+  }
+
+  .auth-frame .account-screen.entry-screen {
+    grid-template-columns: minmax(300px, 0.9fr) minmax(360px, 1.1fr);
+    align-items: center;
+    gap: clamp(36px, 6vw, 86px);
+  }
+
+  .auth-frame .entry-screen .simple-header,
+  .auth-frame .entry-screen .login-card {
+    grid-column: auto;
+  }
+
+  .auth-frame .entry-screen .simple-header h1 {
+    max-width: 11ch;
+  }
+
+  .auth-frame .entry-screen .login-card {
+    width: 100%;
+    max-width: 480px;
+    justify-self: end;
+  }
+}
+
+@media (min-width: 1240px) {
+  .phone-frame:not(.is-live):not(.auth-frame) .screen {
+    padding-inline: 196px 72px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav {
+    width: 128px;
+  }
+
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen,
+  .admin-screen,
+  .complete-screen {
+    grid-template-columns: minmax(340px, 0.7fr) minmax(0, 1.3fr);
+  }
+
+  .admin-screen .admin-layout {
+    grid-template-columns: minmax(290px, 0.92fr) minmax(340px, 1.08fr);
+  }
+
+  .admin-list {
+    max-height: min(68vh, 650px);
+  }
+
+  .social-screen .player-row {
+    grid-template-columns: 34px 60px minmax(0, 1fr) auto auto minmax(132px, auto);
+  }
+
+  .social-screen .player-row .streak,
+  .social-screen .player-row .points,
+  .social-screen .player-row .player-actions {
+    grid-column: auto;
+  }
+}
+
+@media (min-width: 1024px) and (max-height: 780px) {
+  .phone-frame:not(.is-live):not(.auth-frame) {
+    min-height: calc(100dvh - 32px);
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen {
+    padding-top: 34px;
+    padding-bottom: 36px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav {
+    grid-auto-rows: minmax(60px, auto);
+    gap: 7px;
+    padding-block: 10px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav::before {
+    min-height: 46px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav button {
+    min-height: 60px;
+  }
+}
+
 .live-screen .match-action.ace.active .action-icon {
   background: #17243d;
   color: #fffef8;
