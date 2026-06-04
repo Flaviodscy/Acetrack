@@ -7426,3 +7426,521 @@ body,
     font-size: clamp(5rem, 28vh, 8rem);
   }
 }
+
+/* Professional desktop shell: full browser dashboard, not a scaled mobile frame. */
+@media (min-width: 1024px) {
+  body {
+    background: #f4f8ee;
+  }
+
+  .app-shell:not(.is-live-shell) {
+    min-height: 100dvh;
+    place-items: stretch;
+    padding: 0;
+    background:
+      radial-gradient(circle at 94% 5%, rgba(205, 234, 95, 0.14), transparent 26%),
+      linear-gradient(180deg, #fbfdf5 0%, #f4f8ee 100%);
+  }
+
+  .phone-frame:not(.is-live) {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .court-lines {
+    inset: 0 0 0 240px;
+    height: auto;
+    border: 0;
+    opacity: 0.22;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen {
+    height: 100dvh;
+    padding: 36px clamp(32px, 3.4vw, 72px) 48px calc(240px + clamp(32px, 3.4vw, 72px));
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen.content {
+    gap: 24px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav {
+    top: 0;
+    bottom: 0;
+    left: 0;
+    right: auto;
+    width: 240px;
+    max-height: none;
+    grid-template-columns: 1fr !important;
+    grid-auto-rows: minmax(48px, max-content);
+    align-content: start;
+    gap: 8px;
+    padding: 24px 18px;
+    border-radius: 0;
+    background: rgba(255, 255, 255, 0.94);
+    border-right: 1px solid rgba(38, 54, 31, 0.08);
+    box-shadow: none;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav::before {
+    content: "AceTrack";
+    min-height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    margin: 0 4px 14px;
+    padding: 0 8px 16px;
+    border-bottom: 1px solid rgba(38, 54, 31, 0.08);
+    border-radius: 0;
+    background: transparent;
+    color: #172015;
+    font-size: 1.05rem;
+    font-weight: 950;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav button {
+    min-height: 48px;
+    width: 100%;
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr);
+    align-items: center;
+    justify-items: start;
+    gap: 12px;
+    padding: 0 12px;
+    border-radius: 16px;
+    color: #65705f;
+    font-size: 0.9rem;
+    text-align: left;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav button.active {
+    background: #eef8ca;
+    color: #32440a;
+    box-shadow: inset 0 0 0 1px rgba(159, 198, 58, 0.22);
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav span {
+    color: inherit;
+    font-size: 0.86rem;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .toast,
+  .challenge-banner {
+    right: 32px;
+    bottom: 32px;
+    left: auto;
+    transform: none;
+  }
+
+  .challenge-banner {
+    width: min(560px, calc(100% - 304px));
+  }
+
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen,
+  .complete-screen {
+    width: 100%;
+    max-width: 1660px;
+    margin: 0 auto;
+    grid-template-columns: minmax(300px, 430px) minmax(0, 1fr);
+    column-gap: clamp(34px, 4vw, 76px);
+    row-gap: 24px;
+    align-items: start;
+  }
+
+  .admin-screen {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    grid-template-columns: minmax(270px, 350px) minmax(0, 1fr);
+    column-gap: clamp(26px, 3vw, 52px);
+    row-gap: 18px;
+    align-items: start;
+  }
+
+  .home-screen h1,
+  .simple-header h1,
+  .complete-screen .celebration h1 {
+    max-width: 11ch;
+    font-size: clamp(2.75rem, 3.55vw, 4.6rem);
+    line-height: 1.04;
+  }
+
+  .admin-screen .simple-header h1 {
+    max-width: 9ch;
+    font-size: clamp(2.75rem, 3.25vw, 4.1rem);
+  }
+
+  .hero-copy,
+  .simple-header p:not(.eyebrow),
+  .admin-header p:not(.eyebrow) {
+    max-width: 34ch;
+    font-size: 1rem;
+    line-height: 1.55;
+  }
+
+  .home-screen .topbar,
+  .profile-screen .profile-hero,
+  .social-screen .simple-header,
+  .highlights-screen .simple-header,
+  .account-screen .simple-header,
+  .admin-screen .admin-header,
+  .complete-screen .celebration {
+    position: sticky;
+    top: 36px;
+    z-index: 2;
+    align-self: start;
+    padding: 0;
+    background: transparent;
+  }
+
+  .home-screen .section-title,
+  .home-screen .start-grid,
+  .home-screen .challenge-card,
+  .home-screen .recent-match-card,
+  .home-screen .progress-card,
+  .profile-screen .edit-profile-card,
+  .profile-screen .level-row,
+  .profile-screen .flat-section,
+  .profile-screen .pro-card,
+  .social-screen .tabs,
+  .social-screen .distance-control-card,
+  .social-screen .gps-card,
+  .social-screen .list-label,
+  .social-screen .player-list,
+  .social-screen .request-list,
+  .highlights-screen .feature-card,
+  .highlights-screen .generated-share-card,
+  .highlights-screen > .section-row,
+  .highlights-screen .filter-row,
+  .highlights-screen .highlight-grid,
+  .account-screen .login-card,
+  .account-screen > .ghost-button,
+  .complete-screen .match-stats,
+  .complete-screen .feedback-card,
+  .complete-screen .stack {
+    grid-column: 2;
+  }
+
+  .recent-match-card,
+  .progress-card,
+  .feature-card,
+  .generated-share-card,
+  .gps-card,
+  .distance-control-card,
+  .ladder-card,
+  .flat-section,
+  .account-card,
+  .login-card,
+  .match-stats,
+  .feedback-card,
+  .complete-score,
+  .admin-editor,
+  .admin-create-card {
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 24px;
+    box-shadow: 0 18px 46px rgba(70, 83, 55, 0.08), inset 0 0 0 1px rgba(38, 54, 31, 0.06);
+  }
+
+  .start-grid {
+    gap: 16px;
+  }
+
+  .info-card {
+    min-height: 158px;
+    border-radius: 22px;
+  }
+
+  .tabs,
+  .filter-row {
+    margin: 0;
+    overflow: visible;
+    flex-wrap: wrap;
+  }
+
+  .highlights-screen .feature-card {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 0.44fr);
+    min-height: 250px;
+    margin: 0;
+    padding: 28px;
+  }
+
+  .highlights-screen .feature-card button {
+    width: fit-content;
+    min-width: 238px;
+  }
+
+  .highlights-screen .share-preview {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: stretch;
+    width: 100%;
+    height: auto;
+    min-height: 184px;
+  }
+
+  .highlights-screen .highlight-grid {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 14px;
+  }
+
+  .highlight-grid > .empty-state {
+    grid-column: 1 / -1;
+  }
+
+  .profile-screen .profile-hero {
+    grid-template-columns: 96px minmax(0, 1fr);
+    text-align: left;
+  }
+
+  .profile-screen .profile-hero .avatar.large {
+    margin: 0;
+  }
+
+  .profile-screen .profile-hero .account-button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .profile-screen .edit-profile-card {
+    grid-column: 1 / -1;
+  }
+
+  .social-screen .player-row {
+    grid-template-columns: 34px 60px minmax(0, 1fr) auto auto minmax(142px, auto);
+    gap: 14px;
+    min-height: 92px;
+    padding: 16px;
+  }
+
+  .social-screen .player-row .streak,
+  .social-screen .player-row .points,
+  .social-screen .player-row .player-actions {
+    grid-column: auto;
+  }
+
+  .social-screen .player-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-screen .admin-header,
+  .admin-screen .admin-stats,
+  .admin-screen .admin-search,
+  .admin-screen .admin-refresh,
+  .admin-screen .admin-create-toggle,
+  .admin-screen .admin-create-card {
+    grid-column: 1;
+  }
+
+  .admin-stats {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin: 0;
+  }
+
+  .admin-stats .metric {
+    min-height: 82px;
+    padding: 16px;
+  }
+
+  .admin-search,
+  .admin-refresh,
+  .admin-create-toggle {
+    margin: 0;
+  }
+
+  .admin-screen .admin-layout {
+    grid-column: 2;
+    grid-row: 1 / span 8;
+    display: grid;
+    grid-template-columns: minmax(420px, 1fr) minmax(360px, 0.76fr);
+    gap: 20px;
+    align-self: start;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .admin-list {
+    max-height: calc(100dvh - 72px);
+    overflow: auto;
+    align-content: start;
+    gap: 12px;
+    padding: 2px 6px 2px 0;
+  }
+
+  .admin-row {
+    min-height: 86px;
+    grid-template-columns: 58px minmax(0, 1fr) auto;
+    gap: 14px;
+    padding: 14px 16px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.86);
+    box-shadow: 0 12px 28px rgba(70, 83, 55, 0.06), inset 0 0 0 1px rgba(38, 54, 31, 0.06);
+  }
+
+  .admin-row.active {
+    background: linear-gradient(135deg, #f0f8c9, rgba(255, 255, 255, 0.92));
+    box-shadow: 0 16px 36px rgba(159, 198, 58, 0.16), inset 0 0 0 1px rgba(159, 198, 58, 0.24);
+  }
+
+  .admin-editor {
+    position: sticky;
+    top: 36px;
+    max-height: calc(100dvh - 72px);
+    overflow: auto;
+    padding: 20px;
+  }
+
+  .admin-editor .button-pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .auth-frame {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    border-radius: 0;
+    background:
+      radial-gradient(circle at 84% 14%, rgba(205, 234, 95, 0.18), transparent 28%),
+      linear-gradient(180deg, #fbfdf5 0%, #f4f8ee 100%);
+  }
+
+  .auth-frame .screen {
+    height: 100dvh;
+    padding: clamp(36px, 5vw, 80px);
+  }
+
+  .auth-frame .account-screen.entry-screen {
+    width: min(100%, 1240px);
+    margin: auto;
+    grid-template-columns: minmax(320px, 0.9fr) minmax(380px, 520px);
+    align-items: center;
+    gap: clamp(40px, 7vw, 96px);
+  }
+
+  .auth-frame .entry-screen .simple-header,
+  .auth-frame .entry-screen .login-card {
+    grid-column: auto;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1180px) {
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav {
+    width: 208px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen {
+    padding-left: calc(208px + 30px);
+    padding-right: 30px;
+  }
+
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen,
+  .complete-screen,
+  .admin-screen {
+    grid-template-columns: 1fr;
+    max-width: 860px;
+  }
+
+  .home-screen .topbar,
+  .profile-screen .profile-hero,
+  .social-screen .simple-header,
+  .highlights-screen .simple-header,
+  .account-screen .simple-header,
+  .admin-screen .admin-header,
+  .complete-screen .celebration {
+    position: static;
+  }
+
+  .home-screen .section-title,
+  .home-screen .start-grid,
+  .home-screen .challenge-card,
+  .home-screen .recent-match-card,
+  .home-screen .progress-card,
+  .profile-screen .home-area-card,
+  .profile-screen .account-card,
+  .profile-screen .edit-profile-card,
+  .profile-screen .level-row,
+  .profile-screen .flat-section,
+  .profile-screen .pro-card,
+  .social-screen .tabs,
+  .social-screen .distance-control-card,
+  .social-screen .gps-card,
+  .social-screen .list-label,
+  .social-screen .player-list,
+  .social-screen .request-list,
+  .social-screen .ladder-card,
+  .highlights-screen .feature-card,
+  .highlights-screen .generated-share-card,
+  .highlights-screen > .section-row,
+  .highlights-screen .filter-row,
+  .highlights-screen .highlight-grid,
+  .account-screen .login-card,
+  .account-screen > .ghost-button,
+  .complete-screen .complete-score,
+  .complete-screen > .set-table,
+  .complete-screen .match-stats,
+  .complete-screen .feedback-card,
+  .complete-screen .stack,
+  .admin-screen .admin-header,
+  .admin-screen .admin-stats,
+  .admin-screen .admin-search,
+  .admin-screen .admin-refresh,
+  .admin-screen .admin-create-toggle,
+  .admin-screen .admin-create-card,
+  .admin-screen .admin-layout {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .admin-screen .admin-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-editor {
+    position: static;
+    max-height: none;
+  }
+
+  .social-screen .player-row {
+    grid-template-columns: 34px 60px minmax(0, 1fr) minmax(142px, auto);
+  }
+
+  .social-screen .player-row .streak,
+  .social-screen .player-row .points,
+  .social-screen .player-row .player-actions {
+    grid-column: 4;
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-shell:not(.is-live-shell) > .phone-frame:not(.is-live):not(.auth-frame) {
+    justify-self: stretch;
+    align-self: stretch;
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+}
