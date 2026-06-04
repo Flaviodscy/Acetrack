@@ -6263,3 +6263,54 @@ body,
 .simple-header h1 {
   line-height: 1.15;
 }
+
+/* Final Match Cards containment: no hero content may bleed into Saved Matches. */
+.highlights-screen .feature-card {
+  grid-template-columns: 1fr;
+  gap: 16px;
+  min-height: 326px;
+  margin: 24px 0 28px;
+  overflow: hidden;
+  padding: clamp(20px, 5vw, 24px);
+}
+
+.highlights-screen .feature-card button {
+  grid-column: 1;
+  justify-self: stretch;
+  justify-content: center;
+  width: 100%;
+  min-height: 52px;
+}
+
+.highlights-screen .share-preview {
+  grid-row: auto;
+  width: 100%;
+  height: 118px;
+  min-height: 118px;
+  rotate: 0deg;
+}
+
+.highlights-screen .share-preview .portrait {
+  width: 56px;
+  height: 56px;
+}
+
+@media (min-width: 720px) and (orientation: landscape) {
+  .highlights-screen .feature-card {
+    grid-template-columns: minmax(0, 1fr) 170px;
+    align-items: center;
+    min-height: 220px;
+  }
+
+  .highlights-screen .feature-card button {
+    grid-column: 1;
+    width: fit-content;
+    min-width: 230px;
+  }
+
+  .highlights-screen .share-preview {
+    grid-row: span 2;
+    height: 144px;
+    min-height: 144px;
+  }
+}
