@@ -9030,3 +9030,64 @@ body,
     min-height: 124px;
   }
 }
+
+/* Nav-in-flow guarantee: below desktop, content and bottom nav occupy separate rows. */
+@media (max-width: 1023px) {
+  .app-shell:not(.is-live-shell) {
+    min-height: 100dvh;
+    display: block;
+    padding: 0;
+  }
+
+  .app-shell:not(.is-live-shell) > .phone-frame:not(.is-live):not(.auth-frame) {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: none;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
+    border-radius: 0;
+    background:
+      radial-gradient(circle at 90% 8%, rgba(205, 234, 95, 0.12), transparent 30%),
+      var(--paper);
+    box-shadow: none;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen {
+    grid-row: 1;
+    height: auto !important;
+    min-height: 0;
+    max-height: none;
+    padding-bottom: clamp(22px, 4vw, 34px) !important;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav {
+    position: relative !important;
+    grid-row: 2;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    width: auto;
+    max-height: none;
+    margin:
+      0
+      max(10px, env(safe-area-inset-right, 0px))
+      max(8px, env(safe-area-inset-bottom, 0px))
+      max(10px, env(safe-area-inset-left, 0px));
+    align-self: end;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .toast,
+  .challenge-banner {
+    bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+}
