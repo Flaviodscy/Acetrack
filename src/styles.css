@@ -8418,3 +8418,481 @@ body,
     grid-template-columns: 1fr !important;
   }
 }
+
+/* Tablet/narrow-browser authority: covers Chrome responsive widths like 658px. */
+@media (min-width: 601px) and (max-width: 1023px) {
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .app-shell:not(.is-live-shell) {
+    min-height: 100dvh;
+    display: block;
+    padding: 0;
+    background:
+      radial-gradient(circle at 88% 8%, rgba(205, 234, 95, 0.13), transparent 30%),
+      linear-gradient(180deg, #fbfdf5 0%, #f5f9ee 100%);
+  }
+
+  .phone-frame:not(.is-live),
+  .auth-frame {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: none;
+    overflow: hidden;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen {
+    height: calc(100dvh - 96px);
+    padding: 42px clamp(28px, 7vw, 56px) 34px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+  }
+
+  .auth-frame .screen {
+    height: 100dvh;
+    padding: 48px clamp(30px, 8vw, 68px);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .phone-frame:not(.is-live) .court-lines {
+    inset: 58px clamp(20px, 5vw, 42px) auto;
+    height: min(270px, 30vh);
+    opacity: 0.18;
+  }
+
+  .bottom-nav {
+    left: clamp(18px, 5vw, 36px);
+    right: clamp(18px, 5vw, 36px);
+    bottom: 16px;
+    z-index: 40;
+    grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)) !important;
+    gap: 6px;
+    max-height: none;
+    padding: 8px;
+    border-radius: 26px;
+  }
+
+  .bottom-nav::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .bottom-nav button {
+    min-height: 62px;
+    padding: 8px 4px;
+    border-radius: 18px;
+  }
+
+  .bottom-nav span {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 0.68rem;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .screen.content {
+    gap: 18px;
+  }
+
+  .home-screen,
+  .profile-screen,
+  .social-screen,
+  .highlights-screen,
+  .account-screen,
+  .admin-screen,
+  .complete-screen {
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    grid-template-columns: 1fr !important;
+    align-content: start;
+    align-items: stretch;
+    row-gap: 18px;
+  }
+
+  .home-screen > *,
+  .profile-screen > *,
+  .social-screen > *,
+  .highlights-screen > *,
+  .account-screen > *,
+  .admin-screen > *,
+  .complete-screen > * {
+    grid-column: 1 !important;
+    grid-row: auto !important;
+    min-width: 0;
+  }
+
+  .home-screen .topbar,
+  .profile-screen .profile-hero,
+  .social-screen .simple-header,
+  .highlights-screen .simple-header,
+  .account-screen .simple-header,
+  .admin-screen .admin-header,
+  .complete-screen .celebration {
+    position: static;
+    background: transparent;
+  }
+
+  .home-screen .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 18px;
+  }
+
+  .home-screen h1,
+  .simple-header h1,
+  .complete-screen .celebration h1 {
+    max-width: 100%;
+    font-size: clamp(3rem, 8vw, 4.05rem);
+    line-height: 1.05;
+    overflow-wrap: anywhere;
+  }
+
+  .hero-copy,
+  .simple-header p:not(.eyebrow),
+  .complete-screen .celebration p {
+    max-width: 34rem;
+    margin-top: 18px;
+    font-size: 1.02rem;
+    line-height: 1.5;
+  }
+
+  .section-title {
+    margin: 2px 0 0;
+  }
+
+  .start-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 12px;
+  }
+
+  .start-grid .info-card,
+  .info-card {
+    min-height: 142px;
+    padding: 16px;
+    border-radius: 22px;
+  }
+
+  .info-card > span:not(.icon-orb) {
+    min-height: 0;
+    display: block;
+  }
+
+  .recent-match-card,
+  .progress-card,
+  .feature-card,
+  .generated-share-card,
+  .gps-card,
+  .distance-control-card,
+  .ladder-card,
+  .flat-section,
+  .account-card,
+  .login-card,
+  .match-stats,
+  .feedback-card,
+  .complete-score,
+  .admin-editor,
+  .admin-create-card,
+  .challenge-card,
+  .empty-state {
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+    padding: 18px;
+    overflow: visible;
+    border-radius: 22px;
+  }
+
+  .recent-match-card {
+    margin-top: 0;
+  }
+
+  .recent-match-grid {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+  }
+
+  .mini-player + .mini-score + .mini-player,
+  .winner-mark {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .mini-score {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  .progress-card {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: center;
+    gap: 16px;
+    min-height: 126px;
+    text-align: left;
+  }
+
+  .progress-card .metric {
+    padding: 4px;
+  }
+
+  .progress-ring {
+    justify-self: center;
+  }
+
+  .tabs,
+  .filter-row {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar,
+  .filter-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tabs {
+    display: flex;
+    padding: 6px;
+  }
+
+  .tabs button,
+  .filter-row button {
+    flex: 0 0 auto;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+
+  .highlights-screen .feature-card {
+    grid-template-columns: minmax(0, 1fr) minmax(170px, 0.45fr);
+    gap: 18px;
+    min-height: 0;
+    margin: 0;
+  }
+
+  .highlights-screen .feature-card button {
+    width: fit-content;
+    min-width: 220px;
+  }
+
+  .highlights-screen .share-preview {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    width: 100%;
+    height: auto;
+    min-height: 150px;
+    rotate: 0deg;
+  }
+
+  .highlight-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .generated-share-card img {
+    width: 100%;
+    max-height: 54vh;
+    object-fit: contain;
+  }
+
+  .player-row,
+  .request-row,
+  .admin-row {
+    grid-template-columns: 34px 58px minmax(0, 1fr) !important;
+    gap: 12px;
+    padding: 16px 0;
+  }
+
+  .player-row .portrait,
+  .request-row .portrait,
+  .admin-row .portrait {
+    width: 56px;
+    height: 56px;
+  }
+
+  .streak,
+  .points,
+  .player-row button,
+  .player-actions,
+  .request-actions,
+  .request-row > button,
+  .admin-row b {
+    grid-column: 3 !important;
+    justify-self: start;
+  }
+
+  .player-actions,
+  .request-actions {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .player-row button,
+  .player-actions button,
+  .request-actions button {
+    width: 100%;
+  }
+
+  .profile-hero {
+    grid-template-columns: 86px minmax(0, 1fr) !important;
+    gap: 16px;
+  }
+
+  .profile-hero .portrait.large {
+    width: 86px;
+    height: 86px;
+    margin: 0;
+  }
+
+  .profile-hero .account-button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .home-area-card,
+  .account-card,
+  .gps-card,
+  .ladder-card,
+  .challenge-card,
+  .admin-layout,
+  .admin-stats,
+  .edit-grid,
+  .admin-form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .level-row,
+  .skill-editor-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px;
+  }
+
+  .skill {
+    grid-template-columns: 28px minmax(92px, 0.7fr) minmax(0, 1fr) 38px;
+  }
+
+  .equipment-row .equipment-value {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  .stat-balance,
+  .feedback-skill-row {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .admin-editor {
+    position: static;
+    max-height: none;
+  }
+
+  .admin-list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .auth-frame .account-screen.entry-screen {
+    width: min(100%, 620px);
+    margin: 0 auto;
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 20px;
+  }
+}
+
+@media (min-width: 601px) and (max-width: 700px) {
+  .phone-frame:not(.is-live):not(.auth-frame) .screen {
+    padding-inline: clamp(22px, 6vw, 34px);
+  }
+
+  .home-screen h1,
+  .simple-header h1,
+  .complete-screen .celebration h1 {
+    font-size: clamp(2.75rem, 9vw, 3.75rem);
+  }
+
+  .highlight-grid,
+  .highlights-screen .feature-card {
+    grid-template-columns: 1fr !important;
+  }
+
+  .highlights-screen .share-preview {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+@media (min-width: 601px) and (max-width: 1023px) {
+  .home-screen {
+    grid-auto-rows: max-content;
+  }
+
+  .home-screen .topbar {
+    margin: 0;
+    padding: 0;
+  }
+
+  .home-screen .topbar > div {
+    min-width: 0;
+    display: grid;
+    gap: 14px;
+  }
+
+  .home-screen .eyebrow,
+  .home-screen h1,
+  .home-screen .hero-copy {
+    margin: 0;
+  }
+
+  .home-screen .section-title {
+    display: block;
+    margin: 6px 0 0;
+    padding-top: 6px;
+    line-height: 1.25;
+  }
+
+  .home-screen .start-grid {
+    margin: 0;
+  }
+
+  .home-screen .recent-match-card {
+    min-height: 184px;
+    display: grid;
+    gap: 14px;
+    align-content: start;
+  }
+
+  .home-screen .recent-match-card .section-row {
+    margin: 0;
+  }
+
+  .home-screen .recent-match-card .empty-state {
+    min-height: 132px;
+  }
+
+  .home-screen .progress-card {
+    margin: 0;
+  }
+
+  .home-screen .progress-card .metric,
+  .home-screen .progress-ring {
+    min-width: 0;
+  }
+}
