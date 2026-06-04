@@ -80,7 +80,18 @@ import "./styles.css";
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account" | "admin";
 type AuthPhase = "loading" | "signed-out" | "signed-in";
 type MatchMode = "setup" | "playing";
-type PointTag = { acePlayer?: 0 | 1 };
+type PointTag = {
+  acePlayer?: 0 | 1;
+  winnerPlayer?: 0 | 1;
+  errorPlayer?: 0 | 1;
+  shot?: string;
+  source?: "tap" | "voice";
+};
+type VoicePrompt = {
+  action: "point" | "ace" | "winner" | "error";
+  title: string;
+  detail: string;
+};
 type MatchProgression = {
   gamesLost: number;
   gamesWon: number;
@@ -137,6 +148,7 @@ export default function App() {
   const [matchStats, setMatchStats] = usePersistentState<MatchStatsInput>("acetrack:match-stats", emptyMatchStats);
   const [pointTags, setPointTags] = usePersistentState<PointTag[]>("acetrack:point-tags", []);
   const [pendingAce, setPendingAce] = usePersistentState<0 | 1 | undefined>("acetrack:pending-ace", undefined);
+  const [pendingShotTag, setPendingShotTag] = usePersistentState<string | undefined>("acetrack:pending-shot-tag", undefined);
   const [skillFeedback, setSkillFeedback] = usePersistentState<SkillFeedback>("acetrack:skill-feedback", {});
   const [opponentSkillFeedback, setOpponentSkillFeedback] = usePersistentState<SkillFeedback>("acetrack:opponent-skill-feedback", {});
   const [activeFilter, setActiveFilter] = usePersistentState("acetrack:highlight-filter", "All");
@@ -153,6 +165,7 @@ export default function App() {
   const [appUser, setAppUser] = useState<AppUser | undefined>();
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("Voice ready");
+  const [voicePrompt, setVoicePrompt] = useState<VoicePrompt | undefined>();
   const hydratedUserRef = useRef<string | undefined>(undefined);
   const screenRef = useRef(screen);
   const voiceRecognitionRef = useRef<{ start: () => void; stop: () => void; abort?: () => void; onend: (() => void) | null; onerror: ((event: unknown) => void) | null; onresult: ((event: unknown) => void) | null; continuous?: boolean; interimResults?: boolean; lang?: string } | undefined>(undefined);
@@ -340,22 +353,35 @@ export default function App() {
     if (options.message) showMessage(options.message);
   }
 
-  function addPoint(player: 0 | 1) {
+  function addPoint(player: 0 | 1, tag: PointTag = {}) {
     if (match.winner !== undefined) return;
 
-    if (pendingAce !== undefined && pendingAce !== player) {
+    if (pendingAce !== undefined && pendingAce !== player && tag.acePlayer === undefined) {
       showMessage(`Ace is tagged for ${match.players[pendingAce]}. Score that player or clear the tag.`);
       return;
     }
 
     const next = scorePoint(match, player);
     setMatch(next);
-    const pointTag: PointTag = pendingAce === player ? { acePlayer: player } : {};
+    const pointTag: PointTag = {
+      ...tag,
+      acePlayer: tag.acePlayer ?? (pendingAce === player ? player : undefined),
+      shot: tag.shot ?? pendingShotTag,
+      source: tag.source ?? (pendingAce === player || pendingShotTag ? "tap" : undefined)
+    };
     setPointTags((current) => [...current, pointTag]);
     if (pointTag.acePlayer !== undefined) {
-      setMatchStats((current) => ({ ...current, aces: incrementPair(current.aces, player) }));
+      setMatchStats((current) => ({ ...current, aces: incrementPair(current.aces, pointTag.acePlayer!) }));
+    }
+    if (pointTag.winnerPlayer !== undefined) {
+      setMatchStats((current) => ({ ...current, winners: incrementPair(current.winners, pointTag.winnerPlayer!) }));
+    }
+    if (pointTag.errorPlayer !== undefined) {
+      setMatchStats((current) => ({ ...current, unforcedErrors: incrementPair(current.unforcedErrors, pointTag.errorPlayer!) }));
     }
     setPendingAce(undefined);
+    setPendingShotTag(undefined);
+    setVoicePrompt(undefined);
     playUiSound(player === 0 ? "point" : "opponent", matchOptions.soundEnabled);
     if (next.winner !== undefined) setScreen("complete");
   }
@@ -366,7 +392,60 @@ export default function App() {
       showMessage(next === undefined ? "Ace tag cleared" : `Ace tagged for ${match.players[next]}. Tap their point to score it.`);
       return next;
     });
+    setVoicePrompt(undefined);
     playUiSound("tap", matchOptions.soundEnabled);
+  }
+
+  function recordVoicePoint(player: 0 | 1, shot?: string) {
+    addPoint(player, { shot, source: "voice" });
+    setVoiceStatus(`${shot ? `${shot} ` : ""}Point ${match.players[player]}`);
+  }
+
+  function recordVoiceAce(player: 0 | 1) {
+    addPoint(player, { acePlayer: player, shot: "Ace", source: "voice" });
+    setVoiceStatus(`Ace ${match.players[player]}`);
+    showMessage(`Ace recorded for ${match.players[player]}`);
+  }
+
+  function recordVoiceWinner(player: 0 | 1, shot?: string) {
+    const label = shot ? `${shot} winner` : "Winner";
+    addPoint(player, { winnerPlayer: player, shot: label, source: "voice" });
+    setVoiceStatus(`${label} ${match.players[player]}`);
+    showMessage(`${label} recorded for ${match.players[player]}`);
+  }
+
+  function recordVoiceError(player: 0 | 1) {
+    const pointWinner = player === 0 ? 1 : 0;
+    addPoint(pointWinner, { errorPlayer: player, shot: "Unforced error", source: "voice" });
+    setVoiceStatus(`Error ${match.players[player]}`);
+    showMessage(`Error recorded for ${match.players[player]}`);
+  }
+
+  function promptForVoicePlayer(prompt: VoicePrompt) {
+    setVoicePrompt(prompt);
+    setVoiceStatus(prompt.title);
+    showMessage(prompt.detail);
+  }
+
+  function handleVoicePromptSelection(player: 0 | 1) {
+    if (!voicePrompt) return;
+
+    if (voicePrompt.action === "ace") {
+      recordVoiceAce(player);
+      return;
+    }
+
+    if (voicePrompt.action === "winner") {
+      recordVoiceWinner(player, pendingShotTag);
+      return;
+    }
+
+    if (voicePrompt.action === "error") {
+      recordVoiceError(player);
+      return;
+    }
+
+    recordVoicePoint(player);
   }
 
   function undoMatchAction() {
@@ -388,6 +467,13 @@ export default function App() {
     if (lastTag?.acePlayer !== undefined) {
       setMatchStats((current) => ({ ...current, aces: decrementPair(current.aces, lastTag.acePlayer!) }));
     }
+    if (lastTag?.winnerPlayer !== undefined) {
+      setMatchStats((current) => ({ ...current, winners: decrementPair(current.winners, lastTag.winnerPlayer!) }));
+    }
+    if (lastTag?.errorPlayer !== undefined) {
+      setMatchStats((current) => ({ ...current, unforcedErrors: decrementPair(current.unforcedErrors, lastTag.errorPlayer!) }));
+    }
+    setVoicePrompt(undefined);
     playUiSound("undo", matchOptions.soundEnabled);
   }
 
@@ -396,6 +482,8 @@ export default function App() {
     setSaveStatus("");
     setPointTags([]);
     setPendingAce(undefined);
+    setPendingShotTag(undefined);
+    setVoicePrompt(undefined);
     setScreen("live");
   }
 
@@ -412,6 +500,8 @@ export default function App() {
     setSaveStatus("");
     setPointTags([]);
     setPendingAce(undefined);
+    setPendingShotTag(undefined);
+    setVoicePrompt(undefined);
     setScreen("live");
   }
 
@@ -442,6 +532,8 @@ export default function App() {
     setMatchStats(emptyMatchStats);
     setPointTags([]);
     setPendingAce(undefined);
+    setPendingShotTag(undefined);
+    setVoicePrompt(undefined);
     setSkillFeedback({});
     setOpponentSkillFeedback({});
     setMatchMode("playing");
@@ -503,40 +595,94 @@ export default function App() {
   }
 
   function handleVoiceCommand(transcript: string) {
-    const command = transcript.toLowerCase();
+    const command = normalizeVoiceText(transcript);
+    const voicePlayer = resolveVoicePlayer(command, match.players);
+    const shotTag = getVoiceShotTag(command);
+
     if (command.includes("undo") || command.includes("back")) {
       undoMatchAction();
       return;
     }
+
     if (command.includes("end match") || command.includes("finish match")) {
       playUiSound("end", matchOptions.soundEnabled);
       setScreen("complete");
       return;
     }
+
     if (command.includes("new match") || command.includes("reset match")) {
       startNewMatch();
       return;
     }
+
+    if (shotTag && !command.includes("winner") && !command.includes("point") && !command.includes("score")) {
+      setPendingShotTag(shotTag);
+      setVoicePrompt(undefined);
+      setVoiceStatus(`${shotTag} tagged for next point`);
+      showMessage(`${shotTag} tagged. Say "point ${getCompactSideName(match.players[0])}" or "point ${getCompactSideName(match.players[1])}".`);
+      playUiSound("tap", matchOptions.soundEnabled);
+      return;
+    }
+
     if (command.includes("ace")) {
-      if (command.includes("opponent") || command.includes("player two") || command.includes("their") || command.includes("them") || commandMatchesSide(command, match.players[1])) {
-        toggleAceTag(1);
+      if (voicePlayer !== undefined) {
+        recordVoiceAce(voicePlayer);
         return;
       }
-      if (command.includes("me") || command.includes("player one") || commandMatchesSide(command, match.players[0])) {
-        toggleAceTag(0);
+
+      promptForVoicePlayer({
+        action: "ace",
+        title: "Ace for who?",
+        detail: `Say "Ace ${getCompactSideName(match.players[0])}" or "Ace ${getCompactSideName(match.players[1])}", or tap a player.`
+      });
+      return;
+    }
+
+    if (command.includes("winner")) {
+      if (voicePlayer !== undefined) {
+        recordVoiceWinner(voicePlayer, shotTag);
         return;
       }
-      setVoiceStatus("Say ace plus a player name");
-      showMessage(`Say "Ace ${getCompactSideName(match.players[0])}" or "Ace ${getCompactSideName(match.players[1])}"`);
+
+      if (shotTag) setPendingShotTag(shotTag);
+      promptForVoicePlayer({
+        action: "winner",
+        title: "Winner for who?",
+        detail: `Say "winner ${getCompactSideName(match.players[0])}" or "winner ${getCompactSideName(match.players[1])}".`
+      });
       return;
     }
-    if (command.includes("opponent") || command.includes("player two") || command.includes("their") || command.includes("them") || commandMatchesSide(command, match.players[1])) {
-      addPoint(1);
+
+    if (command.includes("error") || command.includes("mistake") || command.includes("double fault")) {
+      if (voicePlayer !== undefined) {
+        recordVoiceError(voicePlayer);
+        return;
+      }
+
+      promptForVoicePlayer({
+        action: "error",
+        title: "Error by who?",
+        detail: `Say "error ${getCompactSideName(match.players[0])}" or "error ${getCompactSideName(match.players[1])}".`
+      });
       return;
     }
-    if (command.includes("point") || command.includes("score") || command.includes("player one") || command.includes("me") || commandMatchesSide(command, match.players[0])) {
-      addPoint(0);
+
+    if (command.includes("point") || command.includes("score") || voicePlayer !== undefined) {
+      if (voicePlayer !== undefined) {
+        recordVoicePoint(voicePlayer, shotTag);
+        return;
+      }
+
+      promptForVoicePlayer({
+        action: "point",
+        title: "Point for who?",
+        detail: `Say "point ${getCompactSideName(match.players[0])}" or "point ${getCompactSideName(match.players[1])}".`
+      });
+      return;
     }
+
+    setVoiceStatus("Try: point player 1, ace player 2, winner Flavio");
+    showMessage("Try: point player 1, ace player 2, winner by name, or nice slice.");
   }
 
   async function saveCurrentMatch() {
@@ -704,6 +850,7 @@ export default function App() {
             options={matchOptions}
             playerNames={match.players}
             pendingAce={pendingAce}
+            pendingShotTag={pendingShotTag}
             pointDisplay={pointDisplay}
             profile={displayProfile}
             server={match.server}
@@ -722,7 +869,9 @@ export default function App() {
             onExit={() => setScreen("home")}
             onNewMatch={startNewMatch}
             onVoiceCommand={handleVoiceCommand}
+            onVoicePromptSelection={handleVoicePromptSelection}
             onVoiceToggle={toggleVoiceCommands}
+            voicePrompt={voicePrompt}
             voiceStatus={voiceStatus}
           />
         )}
@@ -1040,6 +1189,7 @@ function LiveMatchScreen({
   options,
   playerNames,
   pendingAce,
+  pendingShotTag,
   pointDisplay,
   profile,
   server,
@@ -1056,13 +1206,16 @@ function LiveMatchScreen({
   onExit,
   onNewMatch,
   onVoiceCommand,
+  onVoicePromptSelection,
   onVoiceToggle,
+  voicePrompt,
   voiceStatus
 }: {
   isVoiceListening: boolean;
   options: MatchOptions;
   playerNames: [string, string];
   pendingAce?: 0 | 1;
+  pendingShotTag?: string;
   pointDisplay: [string, string];
   profile: UserProfile;
   server: 0 | 1;
@@ -1079,14 +1232,26 @@ function LiveMatchScreen({
   onExit: () => void;
   onNewMatch: () => void;
   onVoiceCommand: (command: string) => void;
+  onVoicePromptSelection: (player: 0 | 1) => void;
   onVoiceToggle: () => void;
+  voicePrompt?: VoicePrompt;
   voiceStatus: string;
 }) {
   const sideLabels = playerNames;
   const compactSideLabels = sideLabels.map(getCompactSideName) as [string, string];
   const scoringStatus = pendingAce !== undefined
     ? `Ace tagged for ${sideLabels[pendingAce]} · tap Point ${compactSideLabels[pendingAce]}`
+    : pendingShotTag
+      ? `${pendingShotTag} tagged · score next point`
     : voiceStatus;
+  const voiceExamples = [
+    `point ${compactSideLabels[0]}`,
+    `point player 2`,
+    "ace",
+    `ace ${compactSideLabels[0]}`,
+    `winner ${compactSideLabels[1]}`,
+    "nice slice"
+  ];
 
   return (
     <section className="screen content live-screen">
@@ -1125,6 +1290,27 @@ function LiveMatchScreen({
       <div className="timer-row live-remote-row">
         <span>{pendingAce !== undefined ? <Zap size={16} /> : <Radio size={16} />} {scoringStatus}</span>
         <strong><Clock3 size={16} /> {elapsedTime}</strong>
+      </div>
+      <div className={voicePrompt ? "voice-assist-panel needs-choice" : "voice-assist-panel"}>
+        <div className="voice-assist-copy">
+          <span><Sparkles size={16} /></span>
+          <div>
+            <strong>{voicePrompt?.title ?? (isVoiceListening ? "Listening commands" : "Voice command examples")}</strong>
+            <small>{voicePrompt?.detail ?? "Say or tap one of these. Names and player numbers both work."}</small>
+          </div>
+        </div>
+        {voicePrompt ? (
+          <div className="voice-choice-row">
+            <button onClick={() => onVoicePromptSelection(0)}>{compactSideLabels[0]}</button>
+            <button onClick={() => onVoicePromptSelection(1)}>{compactSideLabels[1]}</button>
+          </div>
+        ) : (
+          <div className="voice-example-row">
+            {voiceExamples.map((example) => (
+              <button key={example} onClick={() => onVoiceCommand(example)}>{example}</button>
+            ))}
+          </div>
+        )}
       </div>
       <div className="voice-command-panel">
         {[
@@ -2760,6 +2946,36 @@ function hasTrackedStats(stats: MatchStatsInput) {
   return [...stats.aces, ...stats.winners, ...stats.unforcedErrors].some((value) => value > 0);
 }
 
+function normalizeVoiceText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resolveVoicePlayer(command: string, players: [string, string]): 0 | 1 | undefined {
+  if (/\b(player|side|team)?\s*(1|one)\b/.test(command) || /\b(me|my point|my side|us|we)\b/.test(command)) return 0;
+  if (/\b(player|side|team)?\s*(2|two)\b/.test(command) || /\b(opponent|other|their|them|they)\b/.test(command)) return 1;
+  if (commandMatchesSide(command, players[0])) return 0;
+  if (commandMatchesSide(command, players[1])) return 1;
+  return undefined;
+}
+
+function getVoiceShotTag(command: string) {
+  if (/\b(backhand)\b/.test(command)) return "Backhand";
+  if (/\b(forehand)\b/.test(command)) return "Forehand";
+  if (/\b(slice|sliced)\b/.test(command)) return "Slice";
+  if (/\b(volley)\b/.test(command)) return "Volley";
+  if (/\b(lob)\b/.test(command)) return "Lob";
+  if (/\b(drop shot|dropshot)\b/.test(command)) return "Drop shot";
+  if (/\b(serve)\b/.test(command)) return "Serve";
+  if (/\b(rally)\b/.test(command)) return "Rally";
+  return undefined;
+}
+
 function getDisplayScoreForSide(sets: ReturnType<typeof getCompletedSets>, side: 0 | 1) {
   const meaningfulSets = sets.filter((set) => set.games[0] > 0 || set.games[1] > 0 || set.winner !== undefined);
   const latestSet = meaningfulSets.at(-1);
@@ -2952,12 +3168,12 @@ function getRecordMargin(record: MatchRecord) {
 }
 
 function commandMatchesSide(command: string, sideName: string) {
-  return sideName
-    .toLowerCase()
+  const normalizedCommand = normalizeVoiceText(command);
+  return normalizeVoiceText(sideName)
     .split("/")
     .flatMap((part) => part.trim().split(/\s+/))
     .filter((part) => part.length > 2)
-    .some((part) => command.includes(part));
+    .some((part) => normalizedCommand.includes(part));
 }
 
 function getLocationErrorMessage(error: unknown) {
