@@ -75,11 +75,12 @@ export function toNearbyPlayers(locations: PlayerLocation[], origin: Geolocation
   return locations
     .filter((location) => location.id !== currentUserId)
     .map((location, index) => {
-      const distanceMiles = getDistanceMiles(origin.latitude, origin.longitude, location.lat, location.lng);
+      const distanceKm = getDistanceKm(origin.latitude, origin.longitude, location.lat, location.lng);
       return {
         avatar: location.profile.avatar,
-        distance: `${distanceMiles.toFixed(distanceMiles < 10 ? 1 : 0)} mi`,
-        distanceMiles,
+        distance: `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0)} km`,
+        distanceKm,
+        distanceMiles: distanceKm / 1.609344,
         id: location.id,
         isLive: true,
         lat: location.lat,
@@ -94,19 +95,19 @@ export function toNearbyPlayers(locations: PlayerLocation[], origin: Geolocation
         updatedAt: location.updatedAt
       };
     })
-    .sort((a, b) => a.distanceMiles - b.distanceMiles)
+    .sort((a, b) => a.distanceKm - b.distanceKm)
     .map((player, index) => ({ ...player, rank: index + 1 }));
 }
 
-function getDistanceMiles(latA: number, lngA: number, latB: number, lngB: number) {
-  const earthRadiusMiles = 3958.8;
+function getDistanceKm(latA: number, lngA: number, latB: number, lngB: number) {
+  const earthRadiusKm = 6371;
   const dLat = toRadians(latB - latA);
   const dLng = toRadians(lngB - lngA);
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRadians(latA)) * Math.cos(toRadians(latB)) * Math.sin(dLng / 2) ** 2;
 
-  return 2 * earthRadiusMiles * Math.asin(Math.sqrt(a));
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(a));
 }
 
 function toRadians(value: number) {

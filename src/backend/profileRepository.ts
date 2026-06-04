@@ -43,6 +43,24 @@ export async function saveUserProfile(userId: string, profile: UserProfile): Pro
   return { mode: "local" };
 }
 
+export async function createManagedUserProfile(profile: UserProfile, email?: string): Promise<{ mode: BackendMode; userId: string }> {
+  const userId = `managed-${crypto.randomUUID()}`;
+  const db = await getFirebaseDb();
+
+  if (db) {
+    const { doc, setDoc } = await import("firebase/firestore");
+    await setDoc(doc(db, "users", userId, "profile", "main"), {
+      ...serializeProfile(profile),
+      accountType: "managed",
+      email: email?.trim().toLowerCase() || "",
+      updatedAt: new Date().toISOString()
+    });
+    return { mode: "firebase", userId };
+  }
+
+  return { mode: "local", userId };
+}
+
 export async function listUserProfiles(): Promise<AdminUserProfile[]> {
   const db = await getFirebaseDb();
 
@@ -55,6 +73,8 @@ export async function listUserProfiles(): Promise<AdminUserProfile[]> {
     const data = profileDoc.data();
     return {
       ...deserializeProfile(data),
+      accountType: data.accountType === "managed" ? "managed" : "registered",
+      email: typeof data.email === "string" ? data.email : undefined,
       userId: profileDoc.ref.parent.parent?.id ?? profileDoc.id,
       updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined
     };

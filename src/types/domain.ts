@@ -40,6 +40,8 @@ export type UserProfile = {
 };
 
 export type AdminUserProfile = UserProfile & {
+  accountType?: "managed" | "registered";
+  email?: string;
   userId: string;
   updatedAt?: string;
 };
@@ -47,6 +49,7 @@ export type AdminUserProfile = UserProfile & {
 export type NearbyPlayer = {
   avatar: string;
   distance: string;
+  distanceKm: number;
   distanceMiles: number;
   id: string;
   isLive?: boolean;

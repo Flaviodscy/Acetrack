@@ -7,6 +7,7 @@ import {
   Bookmark,
   Calendar,
   Camera,
+  Check,
   ChevronRight,
   CircleUserRound,
   Clock3,
@@ -37,10 +38,12 @@ import {
   Star,
   Target,
   Trophy,
+  UserPlus,
   Users,
   Video,
   Volume2,
   VolumeX,
+  X,
   Zap
 } from "lucide-react";
 import { highlights, nearbyPlayers, opponent, recapStats, recentMatches, user } from "./data/mockData";
@@ -56,7 +59,7 @@ import {
 } from "./backend/authRepository";
 import { getBackendMode, saveMatchRecord } from "./backend/matchRepository";
 import { listPlayerLocations, savePlayerLocation, toNearbyPlayers } from "./backend/nearbyRepository";
-import { listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
+import { createManagedUserProfile, listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
 import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint } from "./lib/tennisScoring";
 import type { AdminUserProfile, NearbyPlayer, UserProfile } from "./types/domain";
@@ -263,9 +266,14 @@ export default function App() {
       setIsVoiceListening(false);
     };
     voiceRecognitionRef.current = recognition;
-    recognition.start();
-    setIsVoiceListening(true);
-    setVoiceStatus("Listening for commands");
+    try {
+      recognition.start();
+      setIsVoiceListening(true);
+      setVoiceStatus("Listening for commands");
+    } catch {
+      setIsVoiceListening(false);
+      setVoiceStatus("Mic blocked. Use command buttons");
+    }
   }
 
   function handleVoiceCommand(transcript: string) {
@@ -434,6 +442,7 @@ export default function App() {
             }}
             onExit={() => setScreen("home")}
             onNewMatch={startNewMatch}
+            onVoiceCommand={handleVoiceCommand}
             onVoiceToggle={toggleVoiceCommands}
             voiceStatus={voiceStatus}
           />
@@ -704,6 +713,7 @@ function LiveMatchScreen({
   onEndMatch,
   onExit,
   onNewMatch,
+  onVoiceCommand,
   onVoiceToggle,
   voiceStatus
 }: {
@@ -721,6 +731,7 @@ function LiveMatchScreen({
   onEndMatch: () => void;
   onExit: () => void;
   onNewMatch: () => void;
+  onVoiceCommand: (command: string) => void;
   onVoiceToggle: () => void;
   voiceStatus: string;
 }) {
@@ -755,6 +766,16 @@ function LiveMatchScreen({
       <div className="timer-row live-remote-row">
         <span><Radio size={16} /> {voiceStatus}</span>
         <strong><Clock3 size={16} /> 00:36</strong>
+      </div>
+      <div className="voice-command-panel">
+        {[
+          ["Me point", "point me"],
+          ["Opponent", "opponent point"],
+          ["Undo", "undo"],
+          ["End", "end match"]
+        ].map(([label, command]) => (
+          <button key={command} onClick={() => onVoiceCommand(command)}>{label}</button>
+        ))}
       </div>
 
       <div className="point-actions">
@@ -973,12 +994,49 @@ function SocialScreen({
 }) {
   const [nearbyStatus, setNearbyStatus] = useState("Share GPS to find friends nearby");
   const [nearbyList, setNearbyList] = useState<NearbyPlayer[]>(getMockNearbyPlayers());
+  const [friendRequests, setFriendRequests] = useState([
+    { id: "req-1", name: "Tania Lopes", avatar: "TL", portrait: "portrait-four", rating: "NTRP 4.0", message: "Wants to play this week" },
+    { id: "req-2", name: "Rafael Costa", avatar: "RC", portrait: "portrait-five", rating: "NTRP 3.5", message: "Sent a ladder request" }
+  ]);
+  const [friends, setFriends] = useState([
+    { id: "friend-1", name: "Jamie Carter", avatar: "JC", portrait: "portrait-two", rating: "NTRP 4.0" }
+  ]);
   const [isLocating, setIsLocating] = useState(false);
-  const [radiusMiles, setRadiusMiles] = useState(10);
+  const [gpsAlwaysOn, setGpsAlwaysOn] = usePersistentState("acetrack:gps-always-on", false);
+  const [radiusKm, setRadiusKm] = useState(15);
 
   useEffect(() => {
     setNearbyList((current) => rankNearbyPlayers(current));
-  }, [radiusMiles]);
+  }, [radiusKm]);
+
+  useEffect(() => {
+    if (!gpsAlwaysOn || activeTab !== "Nearby" || !navigator.geolocation) return;
+
+    setNearbyStatus("GPS is on. Updating nearby players...");
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        syncNearbyPosition(position, false);
+      },
+      (error) => {
+        setNearbyStatus(getLocationErrorMessage(error));
+        setGpsAlwaysOn(false);
+      },
+      { enableHighAccuracy: true, maximumAge: 60000, timeout: 15000 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [activeTab, appUser, gpsAlwaysOn, profile, setGpsAlwaysOn]);
+
+  async function syncNearbyPosition(position: GeolocationPosition, announce: boolean) {
+    const activeUser = appUser ?? await getCurrentAppUser();
+    await savePlayerLocation(activeUser.id, profile, position.coords);
+    const liveLocations = await listPlayerLocations();
+    const livePlayers = toNearbyPlayers(liveLocations, position.coords, activeUser.id);
+    const combined = rankNearbyPlayers([...livePlayers, ...getMockNearbyPlayers(position.coords)]);
+    setNearbyList(combined);
+    setNearbyStatus(livePlayers.length ? `${livePlayers.length} live players found nearby` : "GPS is on. Waiting for friends nearby");
+    if (announce) onAction("Nearby players updated");
+  }
 
   async function refreshNearbyFromGps() {
     if (!navigator.geolocation) {
@@ -991,14 +1049,8 @@ function SocialScreen({
 
     try {
       const position = await getCurrentPosition();
-      const activeUser = appUser ?? await getCurrentAppUser();
-      await savePlayerLocation(activeUser.id, profile, position.coords);
-      const liveLocations = await listPlayerLocations();
-      const livePlayers = toNearbyPlayers(liveLocations, position.coords, activeUser.id);
-      const combined = rankNearbyPlayers([...livePlayers, ...getMockNearbyPlayers(position.coords)]);
-      setNearbyList(combined);
-      setNearbyStatus(livePlayers.length ? `${livePlayers.length} live players found nearby` : "Location shared. Waiting for friends nearby");
-      onAction("Nearby players updated");
+      await syncNearbyPosition(position, true);
+      setGpsAlwaysOn(true);
     } catch (error) {
       setNearbyStatus(getLocationErrorMessage(error));
     } finally {
@@ -1006,7 +1058,18 @@ function SocialScreen({
     }
   }
 
-  const visibleNearbyPlayers = nearbyList.filter((player) => player.distanceMiles <= radiusMiles);
+  const visibleNearbyPlayers = nearbyList.filter((player) => player.distanceKm <= radiusKm);
+
+  function acceptRequest(request: typeof friendRequests[number]) {
+    setFriendRequests((current) => current.filter((item) => item.id !== request.id));
+    setFriends((current) => [{ id: `friend-${request.id}`, name: request.name, avatar: request.avatar, portrait: request.portrait, rating: request.rating }, ...current]);
+    onAction(`${request.name} accepted`);
+  }
+
+  function declineRequest(request: typeof friendRequests[number]) {
+    setFriendRequests((current) => current.filter((item) => item.id !== request.id));
+    onAction(`${request.name} declined`);
+  }
 
   return (
     <section className="screen content social-screen">
@@ -1017,42 +1080,78 @@ function SocialScreen({
       <div className="tabs">
         {["Nearby", "Friends", "Requests"].map((tab) => (
           <button className={tab === activeTab ? "active" : ""} onClick={() => onTab(tab)} key={tab}>
-            {tab}{tab === "Requests" && <span className="badge">2</span>}
+            {tab}{tab === "Requests" && friendRequests.length > 0 && <span className="badge">{friendRequests.length}</span>}
           </button>
         ))}
       </div>
-      <div className="section-row">
-        <button className="distance-pill" onClick={() => setRadiusMiles((current) => current === 10 ? 25 : 10)}><MapPin size={18} /> Within {radiusMiles} miles <ChevronRight size={16} /></button>
-        <button className="icon-button" aria-label="Player filters" onClick={() => onAction("Player filters ready")}><SlidersHorizontal size={20} /></button>
-      </div>
-      <article className="gps-card">
-        <div>
-          <p className="eyebrow">Live GPS</p>
-          <strong>{nearbyStatus}</strong>
-          <span>Shares a rounded location for 24 hours when you tap.</span>
-        </div>
-        <button className="hero-action compact" disabled={isLocating} onClick={refreshNearbyFromGps}>
-          <MapPin size={18} /> {isLocating ? "Finding..." : "Use GPS"}
-        </button>
-      </article>
-      <p className="list-label">Nearby players</p>
-      <div className="player-list">
-        {visibleNearbyPlayers.map((player) => (
-          <article className={player.isLive ? "player-row live-player" : "player-row"} key={player.id}>
-            <strong className={player.rank <= 3 ? "rank active" : "rank"}>{player.rank}</strong>
-            <Portrait className={player.portrait} initials={player.avatar} />
+
+      {activeTab === "Nearby" && (
+        <>
+          <div className="section-row">
+            <button className="distance-pill" onClick={() => setRadiusKm((current) => current === 15 ? 40 : 15)}><MapPin size={18} /> Within {radiusKm} km <ChevronRight size={16} /></button>
+            <button className="icon-button" aria-label="Player filters" onClick={() => onAction("Player filters ready")}><SlidersHorizontal size={20} /></button>
+          </div>
+          <article className="gps-card">
             <div>
-              <h3>{player.name}{player.isLive && <span className="live-chip">GPS</span>}</h3>
-              <p>Level <b>{player.level}</b>{player.rating && <span> · {player.rating}</span>}</p>
-              <p><MapPin size={13} /> {player.distance} away</p>
+              <p className="eyebrow">Live GPS</p>
+              <strong>{nearbyStatus}</strong>
+              <span>{gpsAlwaysOn ? "GPS stays on while AceTrack is open." : "Tap once to authorize GPS. Browser permission is remembered."}</span>
             </div>
-            <span className="streak"><Flame size={16} /> {player.streak} day streak</span>
-            <div className="points"><strong>{player.points.toLocaleString()}</strong><span>PTS</span></div>
-            <button onClick={() => onAction(`Challenge sent to ${player.name}`)}>Challenge</button>
+            <button className="hero-action compact" disabled={isLocating} onClick={refreshNearbyFromGps}>
+              <MapPin size={18} /> {isLocating ? "Finding..." : gpsAlwaysOn ? "Update GPS" : "Use GPS"}
+            </button>
+            <button className="ghost-button gps-toggle" onClick={() => setGpsAlwaysOn((enabled) => !enabled)}>
+              {gpsAlwaysOn ? "Turn GPS off" : "Keep GPS on"}
+            </button>
           </article>
-        ))}
-        {!visibleNearbyPlayers.length && <p className="admin-empty">No players inside {radiusMiles} miles yet.</p>}
-      </div>
+          <p className="list-label">Nearby players</p>
+          <div className="player-list">
+            {visibleNearbyPlayers.map((player) => (
+              <article className={player.isLive ? "player-row live-player" : "player-row"} key={player.id}>
+                <strong className={player.rank <= 3 ? "rank active" : "rank"}>{player.rank}</strong>
+                <Portrait className={player.portrait} initials={player.avatar} />
+                <div>
+                  <h3>{player.name}{player.isLive && <span className="live-chip">GPS</span>}</h3>
+                  <p>Level <b>{player.level}</b>{player.rating && <span> · {player.rating}</span>}</p>
+                  <p><MapPin size={13} /> {player.distance} away</p>
+                </div>
+                <span className="streak"><Flame size={16} /> {player.streak} day streak</span>
+                <div className="points"><strong>{player.points.toLocaleString()}</strong><span>PTS</span></div>
+                <button onClick={() => onAction(`Challenge sent to ${player.name}`)}>Challenge</button>
+              </article>
+            ))}
+            {!visibleNearbyPlayers.length && <p className="admin-empty">No players inside {radiusKm} km yet.</p>}
+          </div>
+        </>
+      )}
+
+      {activeTab === "Friends" && (
+        <div className="request-list">
+          {friends.map((friend) => (
+            <article className="request-row" key={friend.id}>
+              <Portrait className={friend.portrait} initials={friend.avatar} />
+              <div><h3>{friend.name}</h3><p>{friend.rating} · Friend</p></div>
+              <button onClick={() => onAction(`Challenge sent to ${friend.name}`)}>Challenge</button>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {activeTab === "Requests" && (
+        <div className="request-list">
+          {friendRequests.map((request) => (
+            <article className="request-row" key={request.id}>
+              <Portrait className={request.portrait} initials={request.avatar} />
+              <div><h3>{request.name}</h3><p>{request.rating} · {request.message}</p></div>
+              <div className="request-actions">
+                <button aria-label={`Accept ${request.name}`} onClick={() => acceptRequest(request)}><Check size={17} /> Accept</button>
+                <button aria-label={`Decline ${request.name}`} className="quiet" onClick={() => declineRequest(request)}><X size={17} /> Decline</button>
+              </div>
+            </article>
+          ))}
+          {!friendRequests.length && <p className="admin-empty">No pending requests.</p>}
+        </div>
+      )}
       <p className="list-label">Local ladder</p>
       <article className="ladder-card">
         <div><span>Your Rank</span><strong>23 <small>of 148</small></strong><b>2,750 PTS</b></div>
@@ -1396,8 +1495,11 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
   const [profiles, setProfiles] = useState<AdminUserProfile[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<UserProfile | undefined>();
+  const [newUserDraft, setNewUserDraft] = useState<UserProfile>(() => createBlankManagedProfile());
+  const [newUserEmail, setNewUserEmail] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("Loading users...");
+  const [showCreateUser, setShowCreateUser] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
@@ -1441,7 +1543,7 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
     if (!term) return profiles;
 
     return profiles.filter((item) =>
-      [item.name, item.location, item.rating, item.userId]
+      [item.name, item.location, item.rating, item.userId, item.email, item.accountType]
         .join(" ")
         .toLowerCase()
         .includes(term)
@@ -1461,6 +1563,10 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
     setDraft((current) => current ? { ...current, equipment: { ...current.equipment, [field]: value } } : current);
   }
 
+  function updateNewUser(field: keyof UserProfile, value: string | number) {
+    setNewUserDraft((current) => ({ ...current, [field]: value }));
+  }
+
   async function saveAdminProfile() {
     if (!selectedProfile || !draft) return;
 
@@ -1478,6 +1584,34 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
     setStatus(result.mode === "firebase" ? "User profile saved to Firebase" : "User profile saved locally");
     setIsSaving(false);
     onAction("Admin changes saved");
+  }
+
+  async function createAdminUser() {
+    const nextProfile = normalizeProfileDraft(newUserDraft);
+    setIsSaving(true);
+    setStatus("Creating managed user...");
+    try {
+      const result = await createManagedUserProfile(nextProfile, newUserEmail);
+      const createdProfile: AdminUserProfile = {
+        ...nextProfile,
+        accountType: "managed",
+        email: newUserEmail.trim().toLowerCase() || undefined,
+        userId: result.userId,
+        updatedAt: new Date().toISOString()
+      };
+      setProfiles((current) => [createdProfile, ...current]);
+      setSelectedId(result.userId);
+      setDraft(nextProfile);
+      setNewUserDraft(createBlankManagedProfile());
+      setNewUserEmail("");
+      setShowCreateUser(false);
+      setStatus(result.mode === "firebase" ? "Managed user created" : "Managed user created locally");
+      onAction("User created");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not create user");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -1501,6 +1635,46 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
       <button className="ghost-button admin-refresh" disabled={isLoadingUsers} onClick={() => loadAdminProfiles()}>
         <RotateCcw size={17} /> {isLoadingUsers ? "Refreshing..." : "Refresh users"}
       </button>
+      <button className="hero-action compact admin-create-toggle" onClick={() => setShowCreateUser((visible) => !visible)}>
+        <UserPlus size={18} /> {showCreateUser ? "Close creator" : "Create user"}
+      </button>
+
+      {showCreateUser && (
+        <article className="admin-create-card">
+          <div className="section-row">
+            <h2>Create managed user</h2>
+            <button className="text-button" disabled={isSaving} onClick={createAdminUser}>{isSaving ? "Creating..." : "Create"}</button>
+          </div>
+          <div className="edit-grid admin-form">
+            <label>
+              <span>Name</span>
+              <input value={newUserDraft.name} onChange={(event) => updateNewUser("name", event.target.value)} />
+            </label>
+            <label>
+              <span>Email</span>
+              <input value={newUserEmail} onChange={(event) => setNewUserEmail(event.target.value)} placeholder="optional@email.com" type="email" />
+            </label>
+            <label>
+              <span>Location</span>
+              <input value={newUserDraft.location} onChange={(event) => updateNewUser("location", event.target.value)} />
+            </label>
+            <label>
+              <span>Rating</span>
+              <select value={newUserDraft.rating} onChange={(event) => updateNewUser("rating", event.target.value)}>
+                {["NTRP 2.5", "NTRP 3.0", "NTRP 3.5", "NTRP 4.0", "NTRP 4.5", "NTRP 5.0"].map((rating) => <option key={rating}>{rating}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Level</span>
+              <input min="1" max="99" type="number" value={newUserDraft.level} onChange={(event) => updateNewUser("level", Number(event.target.value))} />
+            </label>
+            <label>
+              <span>XP</span>
+              <input min="0" max="100" type="number" value={newUserDraft.xp} onChange={(event) => updateNewUser("xp", Number(event.target.value))} />
+            </label>
+          </div>
+        </article>
+      )}
 
       <div className="admin-layout">
         <div className="admin-list" aria-label="User profiles">
@@ -1509,10 +1683,10 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
               <Portrait className={item.portrait} initials={item.avatar} photoDataUrl={item.photoDataUrl} />
               <span>
                 <strong>{item.name}</strong>
-                <small>{item.location} · {item.rating}</small>
+                <small>{item.location} · {item.rating}{item.email ? ` · ${item.email}` : ""}</small>
                 <em>{item.userId}</em>
               </span>
-              <b>Lv {item.level}</b>
+              <b>{item.accountType === "managed" ? "Managed" : `Lv ${item.level}`}</b>
             </button>
           ))}
           {!filteredProfiles.length && (
@@ -1535,6 +1709,7 @@ function AdminScreen({ onAction }: { onAction: (message: string) => void }) {
                 <div>
                   <strong>{draft.name}</strong>
                   <span>{selectedProfile?.userId}</span>
+                  {selectedProfile?.email && <span>{selectedProfile.email}</span>}
                   <small>Updated {selectedProfile?.updatedAt ? new Date(selectedProfile.updatedAt).toLocaleDateString() : "recently"}</small>
                 </div>
               </div>
@@ -1819,10 +1994,13 @@ function getMockNearbyPlayers(origin?: GeolocationCoordinates): NearbyPlayer[] {
   ];
 
   return nearbyPlayers.map((player, index) => {
-    const distanceMiles = Number.parseFloat(player.distance);
+    const mockDistanceMiles = Number.parseFloat(player.distance);
+    const distanceKm = (Number.isFinite(mockDistanceMiles) ? mockDistanceMiles : index + 1) * 1.609344;
     return {
       ...player,
-      distanceMiles: Number.isFinite(distanceMiles) ? distanceMiles : index + 1,
+      distance: `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0)} km`,
+      distanceKm,
+      distanceMiles: distanceKm / 1.609344,
       id: `mock-${player.name}`,
       isLive: false,
       lat: baseLat + offsets[index][0],
@@ -1834,7 +2012,7 @@ function getMockNearbyPlayers(origin?: GeolocationCoordinates): NearbyPlayer[] {
 
 function rankNearbyPlayers(players: NearbyPlayer[]) {
   return [...players]
-    .sort((a, b) => a.distanceMiles - b.distanceMiles)
+    .sort((a, b) => a.distanceKm - b.distanceKm)
     .map((player, index) => ({ ...player, rank: index + 1 }));
 }
 
@@ -1907,8 +2085,24 @@ function getShortName(name: string) {
 }
 
 function stripAdminFields(profile: AdminUserProfile): UserProfile {
-  const { userId: _userId, updatedAt: _updatedAt, ...userProfile } = profile;
+  const { accountType: _accountType, email: _email, userId: _userId, updatedAt: _updatedAt, ...userProfile } = profile;
   return userProfile;
+}
+
+function createBlankManagedProfile(): UserProfile {
+  return {
+    ...user,
+    name: "New Player",
+    shortName: "New Player",
+    avatar: "NP",
+    photoDataUrl: undefined,
+    portrait: "portrait-three",
+    location: "Local club",
+    rating: "NTRP 3.5",
+    level: 1,
+    xp: 0,
+    xpText: "0 / 1,000 XP"
+  };
 }
 
 function normalizeProfileDraft(profile: UserProfile): UserProfile {
