@@ -8,20 +8,29 @@ export function getBackendMode(): BackendMode {
 }
 
 export async function saveMatchRecord(record: MatchRecord) {
+  return saveMatchRecords([record]);
+}
+
+export async function saveMatchRecords(records: MatchRecord[]) {
   const db = await getFirebaseDb();
+  const cleanRecords = records.map((record) => stripUndefined(record) as MatchRecord);
 
   if (db) {
     try {
-      const { doc, setDoc } = await import("firebase/firestore");
-      await setDoc(doc(db, "users", record.userId, "matches", record.id), record);
-      return { mode: "firebase" as const };
+      const { doc, writeBatch } = await import("firebase/firestore");
+      const batch = writeBatch(db);
+      cleanRecords.forEach((record) => {
+        batch.set(doc(db, "users", record.userId, "matches", record.id), record);
+      });
+      await batch.commit();
+      return { mode: "firebase" as const, savedUserIds: cleanRecords.map((record) => record.userId) };
     } catch (error) {
       console.warn("Firebase save failed, falling back to local storage.", error);
     }
   }
 
-  saveLocalMatch(record);
-  return { mode: "local" as const };
+  saveLocalMatches(cleanRecords);
+  return { mode: "local" as const, savedUserIds: cleanRecords.map((record) => record.userId) };
 }
 
 export async function listRecentMatchRecords() {
@@ -75,7 +84,22 @@ function readLocalMatches(): MatchRecord[] {
   }
 }
 
-function saveLocalMatch(record: MatchRecord) {
+function saveLocalMatches(nextRecords: MatchRecord[]) {
   const records = readLocalMatches();
-  window.localStorage.setItem(LOCAL_MATCHES_KEY, JSON.stringify([record, ...records].slice(0, 25)));
+  const nextKeys = new Set(nextRecords.map((record) => `${record.userId}:${record.id}`));
+  window.localStorage.setItem(LOCAL_MATCHES_KEY, JSON.stringify([
+    ...nextRecords,
+    ...records.filter((record) => !nextKeys.has(`${record.userId}:${record.id}`))
+  ].slice(0, 50)));
+}
+
+function stripUndefined(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripUndefined);
+  if (!value || typeof value !== "object") return value;
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entryValue]) => entryValue !== undefined)
+      .map(([key, entryValue]) => [key, stripUndefined(entryValue)])
+  );
 }

@@ -11820,3 +11820,197 @@ body,
     font-size: clamp(2.8rem, 18vh, 6.8rem);
   }
 }
+
+/* Live match containment fix: no floating table overlap, usable in Safari portrait and landscape. */
+.phone-frame.is-live .mini-set-floating {
+  display: none !important;
+}
+
+.phone-frame.is-live .live-screen > .set-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+  display: table !important;
+  position: static;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--shadow-soft), inset 0 0 0 1px rgba(38, 54, 31, 0.055);
+}
+
+.phone-frame.is-live .live-screen > .set-table th,
+.phone-frame.is-live .live-screen > .set-table td {
+  padding: 4px 6px;
+  font-size: 0.78rem;
+  line-height: 1.15;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.phone-frame.is-live .live-screen > .set-table th:first-child,
+.phone-frame.is-live .live-screen > .set-table td:first-child {
+  width: 35%;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.phone-frame.is-live .voice-assist-panel:not(.needs-choice),
+.phone-frame.is-live .voice-command-panel {
+  display: none !important;
+}
+
+@media (orientation: portrait) {
+  .phone-frame.is-live .live-screen {
+    grid-template-rows: auto minmax(250px, 38vh) auto auto auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: max(118px, calc(env(safe-area-inset-bottom, 0px) + 110px));
+  }
+
+  .phone-frame.is-live .live-score-stage {
+    min-height: 250px;
+    height: auto;
+  }
+
+  .phone-frame.is-live .live-screen > .set-table {
+    order: 3;
+  }
+
+  .phone-frame.is-live .live-remote-row {
+    order: 4;
+  }
+
+  .phone-frame.is-live .watch-remote-card {
+    order: 5;
+  }
+
+  .phone-frame.is-live .voice-assist-panel.needs-choice {
+    order: 6;
+  }
+
+  .phone-frame.is-live .live-screen .point-actions {
+    order: 7;
+    padding-bottom: 8px;
+  }
+
+  .phone-frame.is-live .watch-remote-card {
+    grid-template-columns: 1fr;
+  }
+
+  .phone-frame.is-live .watch-remote-actions {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 430px) and (orientation: portrait) {
+  .phone-frame.is-live .live-screen {
+    grid-template-rows: auto minmax(230px, 34vh) auto auto auto;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .phone-frame.is-live .live-score-stage {
+    min-height: 230px;
+  }
+
+  .phone-frame.is-live .stage-score {
+    font-size: clamp(5.7rem, 36vw, 9rem);
+  }
+
+  .phone-frame.is-live .live-screen .match-action.primary,
+  .phone-frame.is-live .live-screen .match-action.opponent {
+    min-height: 104px;
+  }
+}
+
+@media (min-width: 720px) and (orientation: landscape) {
+  .phone-frame.is-live .live-screen {
+    grid-template-columns: minmax(0, 1fr) minmax(292px, min(32vw, 380px));
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .phone-frame.is-live .live-score-stage {
+    grid-column: 1;
+    grid-row: 2 / 6;
+  }
+
+  .phone-frame.is-live .live-screen > .set-table {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+  }
+
+  .phone-frame.is-live .live-remote-row {
+    grid-column: 2;
+    grid-row: 3;
+    align-self: start;
+  }
+
+  .phone-frame.is-live .watch-remote-card,
+  .phone-frame.is-live .voice-assist-panel:not(.needs-choice),
+  .phone-frame.is-live .voice-command-panel {
+    display: none !important;
+  }
+
+  .phone-frame.is-live .voice-assist-panel.needs-choice {
+    grid-column: 2;
+    grid-row: 4;
+  }
+
+  .phone-frame.is-live .live-screen .point-actions {
+    grid-column: 2;
+    grid-row: 4 / 6;
+    align-self: end;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .phone-frame.is-live .live-screen .match-action.primary,
+  .phone-frame.is-live .live-screen .match-action.opponent {
+    grid-column: span 1;
+    min-height: clamp(70px, 15vh, 96px);
+  }
+
+  .phone-frame.is-live .live-screen .match-action {
+    min-height: clamp(50px, 10vh, 66px);
+    border-radius: 18px;
+  }
+}
+
+@media (min-width: 720px) and (orientation: landscape) and (max-height: 500px) {
+  .phone-frame.is-live .live-screen > .set-table,
+  .phone-frame.is-live .watch-remote-card,
+  .phone-frame.is-live .voice-assist-panel,
+  .phone-frame.is-live .voice-command-panel {
+    display: none !important;
+  }
+
+  .phone-frame.is-live .live-score-stage {
+    grid-row: 2 / 5;
+  }
+
+  .phone-frame.is-live .live-remote-row {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+  }
+
+  .phone-frame.is-live .live-screen .point-actions {
+    grid-column: 2;
+    grid-row: 2 / 5;
+    align-self: end;
+  }
+
+  .phone-frame.is-live .live-screen .match-action.primary,
+  .phone-frame.is-live .live-screen .match-action.opponent {
+    min-height: 66px;
+  }
+
+  .phone-frame.is-live .live-screen .match-action {
+    min-height: 50px;
+  }
+}

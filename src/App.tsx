@@ -56,7 +56,7 @@ import {
   subscribeToAppAuthState,
   type AppUser
 } from "./backend/authRepository";
-import { getBackendMode, listUserMatchRecords, saveMatchRecord } from "./backend/matchRepository";
+import { getBackendMode, listUserMatchRecords, saveMatchRecords } from "./backend/matchRepository";
 import {
   createMatchRemoteSession,
   markMatchRemoteCommandHandled,
@@ -148,6 +148,7 @@ type MatchOptions = {
   customNames: boolean;
   scorer: 0 | 1;
   server: 0 | 1 | 2 | 3;
+  sideUserIds: [string, string];
   sideA: [string, string];
   sideB: [string, string];
   singles: boolean;
@@ -165,6 +166,7 @@ const defaultMatchOptions: MatchOptions = {
   customNames: true,
   scorer: 0,
   server: 0,
+  sideUserIds: ["", ""],
   sideA: [user.name, "Partner"],
   sideB: [opponent.name, "Partner"],
   singles: true,
@@ -741,10 +743,11 @@ export default function App() {
     setScreen("live");
   }
 
-  function startChallenge(playerName: string) {
+  function startChallenge(playerName: string, playerId = "") {
     const nextOptions = normalizeMatchOptions({
       ...matchOptions,
       customNames: true,
+      sideUserIds: [appUser?.id ?? "", playerId],
       sideA: [profile.name, "Partner"],
       sideB: [playerName, "Partner"],
       singles: true
@@ -763,7 +766,7 @@ export default function App() {
     await updateSocialActionStatus(action, "accepted");
     setIncomingActions((current) => current.filter((item) => item.id !== action.id));
     if (action.type === "challenge") {
-      startChallenge(action.fromProfile.name);
+      startChallenge(action.fromProfile.name, action.fromUserId);
       showMessage(`Challenge accepted from ${action.fromProfile.name}`);
     } else {
       showMessage(`Poke answered`);
@@ -777,7 +780,10 @@ export default function App() {
   }
 
   function beginMatch(options: MatchOptions) {
-    const normalizedOptions = normalizeMatchOptions(options, profile.name);
+    const normalizedOptions = normalizeMatchOptions({
+      ...options,
+      sideUserIds: [options.sideUserIds?.[0] || appUser?.id || "", options.sideUserIds?.[1] || ""]
+    }, profile.name);
     const nextMatch = createMatch(getMatchSideNames(normalizedOptions));
     nextMatch.server = getInitialServerSide(normalizedOptions);
     resetRemoteScoring("Creating watch remote...");
@@ -1026,8 +1032,13 @@ export default function App() {
     setAccountStatus(formatAccountStatus(appUser));
     const feedback = createFeedbackSummary(skillFeedback);
     const opponentFeedback = createFeedbackSummary(opponentSkillFeedback);
-    const record = createMatchRecord(match, appUser.id, elapsedMatchTime, matchStats, feedback, opponentFeedback);
-    const result = await saveMatchRecord(record);
+    const sideUserIds: [string, string] = [
+      matchOptionsRef.current.sideUserIds?.[0] || appUser.id,
+      matchOptionsRef.current.sideUserIds?.[1] || ""
+    ];
+    const record = createMatchRecord(match, appUser.id, elapsedMatchTime, matchStats, feedback, opponentFeedback, sideUserIds);
+    const sharedRecords = createSharedMatchRecords(record, appUser.id);
+    const result = await saveMatchRecords(sharedRecords);
     const nextRecords = [record, ...matchRecords.filter((item) => item.id !== record.id)].slice(0, 25);
     setMatchRecords(nextRecords);
     const profileWithFeedback = applySkillFeedback(profile, skillFeedback);
@@ -1047,7 +1058,16 @@ export default function App() {
     setSkillFeedback({});
     setOpponentSkillFeedback({});
     const feedbackText = feedbackReward.awarded ? ` · +${25 + opponentFeedback.tokensUsed * 2} feedback XP` : "";
-    setSaveStatus(result.mode === "firebase" ? `Saved to Firebase · +${calculateMatchPoints(record)} match XP${feedbackText}` : `Saved locally · +${calculateMatchPoints(record)} match XP${feedbackText}`);
+    const opponentUserId = sideUserIds[1] && sideUserIds[1] !== appUser.id ? sideUserIds[1] : "";
+    const savedForOpponent = opponentUserId && result.mode === "firebase" && result.savedUserIds.includes(opponentUserId);
+    setSaveStatus(
+      result.mode === "firebase"
+        ? `${savedForOpponent ? "Saved to both Match sections" : "Saved to Firebase"} · +${calculateMatchPoints(record)} match XP${feedbackText}`
+        : `Saved locally only · opponent sync needs Firebase · +${calculateMatchPoints(record)} match XP${feedbackText}`
+    );
+    if (result.mode === "firebase") {
+      refreshMatchRecords(appUser.id);
+    }
   }
 
   function setReceivedSkillFeedback(skill: string, value: -1 | 0 | 1 | undefined) {
@@ -1508,8 +1528,10 @@ function MatchSetupScreen({
 
   function updateSide(side: "sideA" | "sideB", index: 0 | 1, value: string) {
     const nextSide = [...currentOptions[side]] as [string, string];
+    const nextSideUserIds = [...currentOptions.sideUserIds] as [string, string];
     nextSide[index] = value;
-    onUpdate({ ...currentOptions, [side]: nextSide });
+    if (side === "sideB") nextSideUserIds[1] = "";
+    onUpdate({ ...currentOptions, [side]: nextSide, sideUserIds: nextSideUserIds });
   }
 
   function swapSides() {
@@ -2051,7 +2073,7 @@ function SocialScreen({
   profile: UserProfile;
   onAction: (message: string) => void;
   onAwardXp: (id: string, reward: EngagementReward) => Promise<boolean>;
-  onStartChallenge: (playerName: string) => void;
+  onStartChallenge: (playerName: string, playerId?: string) => void;
   onSocialChanged: () => void;
   onTab: (tab: string) => void;
 }) {
@@ -2583,7 +2605,7 @@ function SocialScreen({
   async function acceptAction(action: SocialAction) {
     await updateSocialActionStatus(action, "accepted");
     onAction(action.type === "challenge" ? `Challenge accepted from ${action.fromProfile.name}` : `Poke answered`);
-    if (action.type === "challenge") onStartChallenge(action.fromProfile.name);
+    if (action.type === "challenge") onStartChallenge(action.fromProfile.name, action.fromUserId);
     await loadSocialConnections();
     onSocialChanged();
   }
@@ -3996,6 +4018,10 @@ function normalizeMatchOptions(options: MatchOptions, fallbackName: string): Mat
   const normalized: MatchOptions = {
     ...defaultMatchOptions,
     ...options,
+    sideUserIds: [
+      options.sideUserIds?.[0] ?? "",
+      options.sideUserIds?.[1] ?? ""
+    ],
     sideA: [
       options.sideA?.[0]?.trim() || fallbackName || defaultMatchOptions.sideA[0],
       options.sideA?.[1]?.trim() || defaultMatchOptions.sideA[1]
@@ -4619,6 +4645,78 @@ function createUnsavedMatchPreview(match: MatchState): MatchRecord {
   };
 }
 
+function createSharedMatchRecords(record: MatchRecord, currentUserId: string) {
+  const opponentUserId = record.sideUserIds?.[1];
+  if (!opponentUserId || opponentUserId === currentUserId) return [record];
+
+  return [record, createOpponentMatchRecord(record, opponentUserId, currentUserId)];
+}
+
+function createOpponentMatchRecord(record: MatchRecord, opponentUserId: string, currentUserId: string): MatchRecord {
+  const mirroredState = mirrorMatchState(record.scoringState);
+
+  return {
+    ...record,
+    userId: opponentUserId,
+    participantUserIds: getMatchParticipantUserIds([opponentUserId, currentUserId]),
+    sideUserIds: [opponentUserId, currentUserId],
+    players: [record.players[1], record.players[0]],
+    winner: record.winner,
+    finalScore: getFinalScore(mirroredState) || getLiveScoreSummary(mirroredState),
+    sets: record.sets.map(mirrorSetScore),
+    scoringState: mirroredState,
+    stats: {
+      aces: swapPair(record.stats.aces),
+      winners: swapPair(record.stats.winners),
+      unforcedErrors: swapPair(record.stats.unforcedErrors)
+    },
+    feedback: record.opponentFeedback,
+    opponentFeedback: record.feedback
+  };
+}
+
+function mirrorMatchState(state: MatchState): MatchState {
+  return {
+    ...state,
+    players: [state.players[1], state.players[0]],
+    pointScore: swapPair(state.pointScore),
+    sets: state.sets.map(mirrorSetScore),
+    currentSet: mirrorSetScore(state.currentSet),
+    server: mirrorSide(state.server),
+    winner: state.winner === undefined ? undefined : mirrorSide(state.winner),
+    history: state.history.map((snapshot) => ({
+      ...snapshot,
+      players: [snapshot.players[1], snapshot.players[0]],
+      pointScore: swapPair(snapshot.pointScore),
+      sets: snapshot.sets.map(mirrorSetScore),
+      currentSet: mirrorSetScore(snapshot.currentSet),
+      server: mirrorSide(snapshot.server),
+      winner: snapshot.winner === undefined ? undefined : mirrorSide(snapshot.winner)
+    }))
+  };
+}
+
+function mirrorSetScore(set: ReturnType<typeof getCompletedSets>[number]) {
+  return {
+    ...set,
+    games: swapPair(set.games),
+    tiebreak: set.tiebreak ? swapPair(set.tiebreak) : undefined,
+    winner: set.winner === undefined ? undefined : mirrorSide(set.winner)
+  };
+}
+
+function mirrorSide(side: 0 | 1): 0 | 1 {
+  return side === 0 ? 1 : 0;
+}
+
+function swapPair(pair: [number, number]): [number, number] {
+  return [pair[1], pair[0]];
+}
+
+function getMatchParticipantUserIds(userIds: [string, string]) {
+  return Array.from(new Set(userIds.filter(Boolean)));
+}
+
 function getUserMatchSummary(records: MatchRecord[]) {
   const played = records.length;
   const wins = records.filter((record) => record.winner === record.players[0]).length;
@@ -4908,17 +5006,23 @@ function sanitizeMatchOptions(options: MatchOptions, profileName: string) {
     isDemoName(options.sideB[0]) || !options.sideB[0].trim() ? opponent.name : options.sideB[0],
     isDemoName(options.sideB[1]) || !options.sideB[1].trim() ? "Partner" : options.sideB[1]
   ];
+  const sideUserIds: [string, string] = [
+    options.sideUserIds?.[0] ?? "",
+    options.sideUserIds?.[1] ?? ""
+  ];
 
   if (
     sideA[0] === options.sideA[0] &&
     sideA[1] === options.sideA[1] &&
     sideB[0] === options.sideB[0] &&
-    sideB[1] === options.sideB[1]
+    sideB[1] === options.sideB[1] &&
+    sideUserIds[0] === options.sideUserIds?.[0] &&
+    sideUserIds[1] === options.sideUserIds?.[1]
   ) {
     return options;
   }
 
-  return { ...options, sideA, sideB };
+  return { ...options, sideA, sideB, sideUserIds };
 }
 
 function sanitizeMatchState(match: MatchState, profileName: string) {

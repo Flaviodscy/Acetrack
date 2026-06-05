@@ -10,13 +10,17 @@ export function createMatchRecord(
   durationLabel: string,
   stats: MatchStatsInput,
   feedback?: MatchFeedbackInput,
-  opponentFeedback?: MatchFeedbackInput
+  opponentFeedback?: MatchFeedbackInput,
+  sideUserIds?: [string, string]
 ): MatchRecord {
   const winner = match.winner === undefined ? undefined : match.players[match.winner];
+  const participantUserIds = Array.from(new Set((sideUserIds ?? [userId, ""]).filter(Boolean)));
 
   return {
     id: crypto.randomUUID(),
     userId,
+    participantUserIds,
+    sideUserIds,
     createdAt: new Date().toISOString(),
     players: match.players,
     winner,

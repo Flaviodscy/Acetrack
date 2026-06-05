@@ -17,6 +17,14 @@ service cloud.firestore {
         && request.auth.uid in data.userIds;
     }
 
+    function canWriteSharedMatchFor(userId) {
+      return request.auth != null
+        && request.resource.data.userId == userId
+        && request.resource.data.participantUserIds is list
+        && request.auth.uid in request.resource.data.participantUserIds
+        && userId in request.resource.data.participantUserIds;
+    }
+
     function isSocialSender(data) {
       return request.auth != null
         && data.fromUserId == request.auth.uid;
@@ -29,7 +37,8 @@ service cloud.firestore {
 
     match /users/{userId}/matches/{matchId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow write: if isOwner(userId);
+      allow create, update: if isOwner(userId) || isAdmin() || canWriteSharedMatchFor(userId);
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     match /users/{userId}/profile/{profileId} {

@@ -8,6 +8,8 @@ AceTrack should feel real, reliable, minimal, premium, and consistent.
 - If real data does not exist, show a clear empty state such as "Nobody in your area yet" or "No saved matches yet."
 - Nearby players must come from real GPS-enabled AceTrack users only.
 - Match points, match level, and player progress must be earned from saved match data, not manually edited.
+- When a match is played against a known AceTrack user, saving the match must write a match record for both players so each person sees it in their Matches section.
+- Match records saved for the opponent must be mirrored from their perspective, with their name first and win/loss/progression calculated for their side.
 - Skills can be self-set, then adjusted by post-match opponent feedback.
 - A player should not vote for their own skills. Post-match feedback must clearly distinguish "opponent votes for you" from "you vote for opponent."
 - Challenges, pokes, friend requests, and share cards must perform real actions, not just show placeholder messages.
@@ -33,6 +35,7 @@ AceTrack should feel real, reliable, minimal, premium, and consistent.
 - Match setup and live scoring should be usable in portrait and landscape.
 - Singles match setup must show only two player fields. Do not render disabled or empty partner boxes unless doubles is selected.
 - Live Match should prioritize tripod use: big readable score, simple point controls, correct serving side, and a clean full-screen landscape layout.
+- Live Match must never float set tables, player labels, or controls over the main score. In tight landscape, hide secondary panels before allowing overlap.
 - Match Cards should use real saved match data and produce a shareable social card.
 - Social should support real nearby discovery, friend requests, friends, pokes, and challenges.
 - Friends should have an accessible profile view with clear Challenge and Message actions.

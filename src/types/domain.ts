@@ -91,6 +91,8 @@ export type NearbyPlayer = {
 export type MatchRecord = {
   id: string;
   userId: string;
+  participantUserIds?: string[];
+  sideUserIds?: [string, string];
   createdAt: string;
   players: [string, string];
   winner?: string;
