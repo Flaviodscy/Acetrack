@@ -67,7 +67,7 @@ import {
   type MatchRemoteSession
 } from "./backend/matchRemoteRepository";
 import { listPlayerLocations, savePlayerLocation, subscribeToPlayerLocations, toNearbyPlayers } from "./backend/nearbyRepository";
-import { searchPlayerDirectoryProfiles, type PlayerDirectoryProfile } from "./backend/playerDirectoryRepository";
+import { publishPlayerDirectoryProfile, searchPlayerDirectoryProfiles, type PlayerDirectoryProfile } from "./backend/playerDirectoryRepository";
 import { createManagedUserProfile, deleteUserProfile, listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
 import {
   acceptFriendRequest,
@@ -141,6 +141,9 @@ type MatchProgression = {
 };
 type EngagementReward = NonNullable<UserProfile["engagement"]>["rewards"][string];
 type SkillFeedback = Record<string, -1 | 0 | 1 | undefined>;
+type FriendSearchResult = PlayerDirectoryProfile & {
+  source: "directory" | "known";
+};
 type MatchOptions = {
   customNames: boolean;
   scorer: 0 | 1;
@@ -2033,9 +2036,11 @@ function SocialScreen({
   const [socialActions, setSocialActions] = useState<SocialAction[]>([]);
   const [socialStatus, setSocialStatus] = useState("Connect with real players nearby.");
   const [friendSearchQuery, setFriendSearchQuery] = useState("");
-  const [friendSearchResults, setFriendSearchResults] = useState<PlayerDirectoryProfile[]>([]);
+  const [friendSearchResults, setFriendSearchResults] = useState<FriendSearchResult[]>([]);
   const [friendSearchStatus, setFriendSearchStatus] = useState("Search real AceTrack players by name.");
   const [isSearchingFriends, setIsSearchingFriends] = useState(false);
+  const [directorySyncStatus, setDirectorySyncStatus] = useState("");
+  const [isSyncingDirectory, setIsSyncingDirectory] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [gpsAlwaysOn, setGpsAlwaysOn] = usePersistentState("acetrack:gps-always-on", false);
   const [radiusKm, setRadiusKm] = usePersistentState("acetrack:gps-radius-km", 15);
@@ -2043,12 +2048,21 @@ function SocialScreen({
   const [tennisCourts, setTennisCourts] = useState<TennisCourt[]>([]);
   const [courtStatus, setCourtStatus] = useState("Use GPS to find real tennis courts nearby.");
   const [isLoadingCourts, setIsLoadingCourts] = useState(false);
+  const directorySyncPromiseRef = useRef<Promise<void> | undefined>(undefined);
+  const directorySyncStartedRef = useRef(false);
   const lastCourtLookupRef = useRef("");
   const currentUserId = appUser?.id;
+  const canSyncDirectory = appUser?.email?.toLowerCase() === ADMIN_EMAIL;
 
   useEffect(() => {
     setNearbyList((current) => rankNearbyPlayers(current));
   }, [radiusKm]);
+
+  useEffect(() => {
+    if (!canSyncDirectory || directorySyncStartedRef.current) return;
+    directorySyncStartedRef.current = true;
+    syncPlayerDirectory(false);
+  }, [canSyncDirectory]);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -2353,7 +2367,13 @@ function SocialScreen({
     setFriendSearchStatus("Searching real AceTrack profiles...");
 
     try {
-      const results = await searchPlayerDirectoryProfiles(term, currentUserId);
+      if (canSyncDirectory && (!directorySyncStatus || directorySyncPromiseRef.current)) {
+        await syncPlayerDirectory(false);
+      }
+
+      const directoryResults = await searchPlayerDirectoryProfiles(term, currentUserId);
+      const knownResults = getKnownFriendSearchResults(term, currentUserId, friends, friendRequests, sentFriendRequests, socialActions);
+      const results = mergeFriendSearchResults(directoryResults, knownResults);
       setFriendSearchResults(results);
       setFriendSearchStatus(results.length ? `${results.length} player${results.length === 1 ? "" : "s"} found` : "No AceTrack player found with that name. Send an invite link instead.");
     } catch (error) {
@@ -2361,6 +2381,36 @@ function SocialScreen({
       setFriendSearchStatus(getSocialErrorMessage(error));
     } finally {
       setIsSearchingFriends(false);
+    }
+  }
+
+  async function syncPlayerDirectory(announce = true) {
+    if (!canSyncDirectory) return;
+    if (directorySyncPromiseRef.current) {
+      if (announce) setDirectorySyncStatus("Syncing profile search...");
+      await directorySyncPromiseRef.current;
+      return;
+    }
+
+    setIsSyncingDirectory(true);
+    if (announce) setDirectorySyncStatus("Syncing profile search...");
+
+    const syncPromise = (async () => {
+      const profiles = await listUserProfiles();
+      await Promise.all(profiles.map((userProfile) => publishPlayerDirectoryProfile(userProfile.userId, userProfile)));
+      setDirectorySyncStatus(`${profiles.length} profile${profiles.length === 1 ? "" : "s"} searchable`);
+      directorySyncStartedRef.current = true;
+    })();
+
+    directorySyncPromiseRef.current = syncPromise;
+
+    try {
+      await syncPromise;
+    } catch (error) {
+      setDirectorySyncStatus(getSocialErrorMessage(error));
+    } finally {
+      directorySyncPromiseRef.current = undefined;
+      setIsSyncingDirectory(false);
     }
   }
 
@@ -2519,6 +2569,14 @@ function SocialScreen({
             </button>
           </div>
         </form>
+        {canSyncDirectory && (
+          <div className="directory-sync-row">
+            <span>{directorySyncStatus || "Admin search sync keeps existing database profiles findable."}</span>
+            <button className="text-button" disabled={isSyncingDirectory} onClick={() => syncPlayerDirectory(true)}>
+              {isSyncingDirectory ? "Syncing..." : "Sync users"}
+            </button>
+          </div>
+        )}
         <p className="friend-search-status">{friendSearchStatus}</p>
         {friendSearchResults.length > 0 && (
           <div className="friend-search-results">
@@ -4190,6 +4248,72 @@ function directoryProfileToSocialProfile(player: PlayerDirectoryProfile): Social
     portrait: player.portrait,
     rating: player.rating
   };
+}
+
+function getKnownFriendSearchResults(
+  term: string,
+  currentUserId: string | undefined,
+  friendships: Friendship[],
+  incomingRequests: FriendRequest[],
+  sentRequests: FriendRequest[],
+  actions: SocialAction[]
+) {
+  const normalizedTerm = normalizeFriendSearchTerm(term);
+  const profiles = new Map<string, SocialProfileSnapshot>();
+
+  function addProfile(userId: string, socialProfile: SocialProfileSnapshot) {
+    if (!userId || userId === currentUserId) return;
+    if (!normalizeFriendSearchTerm(socialProfile.name).includes(normalizedTerm)) return;
+    profiles.set(userId, socialProfile);
+  }
+
+  friendships.forEach((friendship) => {
+    const friendId = getFriendId(friendship, currentUserId);
+    const friendProfile = friendId ? friendship.profiles[friendId] : undefined;
+    if (friendId && friendProfile) addProfile(friendId, friendProfile);
+  });
+
+  incomingRequests.forEach((request) => addProfile(request.fromUserId, request.fromProfile));
+  sentRequests.forEach((request) => addProfile(request.toUserId, request.toProfile));
+  actions.forEach((action) => addProfile(action.fromUserId, action.fromProfile));
+
+  return Array.from(profiles.entries()).map(([userId, socialProfile]) => socialProfileToFriendSearchResult(userId, socialProfile));
+}
+
+function mergeFriendSearchResults(directoryProfiles: PlayerDirectoryProfile[], knownProfiles: FriendSearchResult[]) {
+  const merged = new Map<string, FriendSearchResult>();
+  directoryProfiles.forEach((player) => merged.set(player.id, { ...player, source: "directory" }));
+  knownProfiles.forEach((player) => {
+    if (!merged.has(player.id)) merged.set(player.id, player);
+  });
+
+  return Array.from(merged.values()).slice(0, 8);
+}
+
+function socialProfileToFriendSearchResult(userId: string, profile: SocialProfileSnapshot): FriendSearchResult {
+  return {
+    avatar: profile.avatar,
+    id: userId,
+    level: profile.level,
+    location: "",
+    name: profile.name,
+    points: profile.points,
+    portrait: profile.portrait,
+    rating: profile.rating,
+    searchName: normalizeFriendSearchTerm(profile.name),
+    source: "known",
+    updatedAt: ""
+  };
+}
+
+function normalizeFriendSearchTerm(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function isFriend(friendships: Friendship[], playerId: string) {

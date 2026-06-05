@@ -21,6 +21,9 @@ AceTrack should feel real, reliable, minimal, premium, and consistent.
 - Cards should be soft and functional, not decorative clutter.
 - Buttons must look consistent across the app and clearly communicate their action.
 - Every page should have readable spacing, no clipped cards, no hidden bottom navigation, and no text overflow.
+- List rows and social cards must never squeeze names, ratings, XP text, or status copy into unreadable columns. If actions do not fit beside identity/content, stack actions below the content with full-width tap targets.
+- Page headings must never be clipped by the top edge, browser chrome, phone frame, or responsive viewport. Keep enough top padding and verify the first line is fully visible.
+- Cards must reveal all of their content. Do not allow buttons, pills, tabs, avatars, charts, or generated share cards to overlap section headings or neighboring cards.
 
 ## Screen Expectations
 
@@ -35,6 +38,6 @@ AceTrack should feel real, reliable, minimal, premium, and consistent.
 
 - Check Home, Match Setup, Live Match, Match Complete, Match Cards, Social, Profile, Account, and Admin after meaningful changes.
 - Verify key buttons by clicking them where possible.
-- Verify mobile spacing and desktop responsive layout.
+- Verify mobile spacing and desktop responsive layout at narrow phones, large phones, responsive tablet widths, and desktop. Specifically check that social request/friend cards, match cards, and bottom navigation do not overlap or hide content.
 - Run `npm test` and `npm run build`.
 - Deploy Firebase Hosting and Firestore rules when frontend or rules change.
