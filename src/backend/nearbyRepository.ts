@@ -38,7 +38,7 @@ export async function listPlayerLocations(): Promise<PlayerLocation[]> {
   const db = await getFirebaseDb();
   if (!db) return [];
 
-  const { collection, deleteDoc, doc, getDoc, getDocs } = await import("firebase/firestore");
+  const { collection, deleteDoc, getDocs } = await import("firebase/firestore");
   const snapshot = await getDocs(collection(db, "publicLocations"));
 
   const locations = await Promise.all(snapshot.docs.map(async (locationDoc) => {
@@ -47,47 +47,51 @@ export async function listPlayerLocations(): Promise<PlayerLocation[]> {
       await deleteDoc(locationDoc.ref).catch(() => undefined);
     }
 
-    if (typeof data.lat !== "number" || typeof data.lng !== "number") {
-      await removeLocation();
-      return undefined;
-    }
-    if (data.source !== "aceTrackGps") {
-      await removeLocation();
-      return undefined;
-    }
-    if (typeof data.updatedAt === "string" && isStaleLocation(data.updatedAt)) {
+    const location = getLocationFromData(locationDoc.id, data);
+    if (!location) {
       await removeLocation();
       return undefined;
     }
 
-    const profileSnapshot = await getDoc(doc(db, "users", locationDoc.id, "profile", "main")).catch(() => undefined);
-    if (!profileSnapshot?.exists()) {
-      await removeLocation();
-      return undefined;
-    }
-
-    const profile = toPublicLocationProfile(profileSnapshot.data());
-    if (!profile) {
-      await removeLocation();
-      return undefined;
-    }
-    if (isKnownDemoProfile(profile.name)) {
-      await removeLocation();
-      return undefined;
-    }
-
-    return {
-      accuracy: typeof data.accuracy === "number" ? data.accuracy : undefined,
-      id: locationDoc.id,
-      lat: data.lat,
-      lng: data.lng,
-      profile,
-      source: "aceTrackGps",
-      updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined
-    } satisfies PlayerLocation;
+    return location;
   }));
 
   return locations.flatMap((location) => location ? [location] : []);
+}
+
+export async function subscribeToPlayerLocations(onLocations: (locations: PlayerLocation[]) => void, onError?: (error: unknown) => void) {
+  const db = await getFirebaseDb();
+  if (!db) {
+    onLocations([]);
+    return () => undefined;
+  }
+
+  const { collection, onSnapshot } = await import("firebase/firestore");
+  return onSnapshot(collection(db, "publicLocations"), (snapshot) => {
+    onLocations(snapshot.docs.flatMap((locationDoc) => {
+      const location = getLocationFromData(locationDoc.id, locationDoc.data());
+      return location ? [location] : [];
+    }));
+  }, (error) => onError?.(error));
+}
+
+function getLocationFromData(id: string, data: Record<string, unknown>): PlayerLocation | undefined {
+  if (typeof data.lat !== "number" || typeof data.lng !== "number") return undefined;
+  if (data.source !== "aceTrackGps") return undefined;
+  if (typeof data.updatedAt === "string" && isStaleLocation(data.updatedAt)) return undefined;
+
+  const profile = toPublicLocationProfile(data.profile);
+  if (!profile || isKnownDemoProfile(profile.name)) return undefined;
+
+  return {
+    accuracy: typeof data.accuracy === "number" ? data.accuracy : undefined,
+    id,
+    lat: data.lat,
+    lng: data.lng,
+    profile,
+    source: "aceTrackGps",
+    updatedAt: typeof data.updatedAt === "string" ? data.updatedAt : undefined
+  };
 }
 
 function roundCoordinate(value: number) {
@@ -116,12 +120,14 @@ function isKnownDemoProfile(name: string) {
   ]).has(name.trim().toLowerCase());
 }
 
-function toPublicLocationProfile(data: Record<string, unknown>): PlayerLocation["profile"] | undefined {
-  const name = typeof data.name === "string" ? data.name.trim() : "";
-  const avatar = typeof data.avatar === "string" ? data.avatar : "";
-  const portrait = typeof data.portrait === "string" ? data.portrait : "";
-  const level = typeof data.level === "number" ? data.level : 0;
-  const rating = typeof data.rating === "string" ? data.rating : "0 Ace XP";
+function toPublicLocationProfile(data: unknown): PlayerLocation["profile"] | undefined {
+  if (!data || typeof data !== "object") return undefined;
+  const profileData = data as Record<string, unknown>;
+  const name = typeof profileData.name === "string" ? profileData.name.trim() : "";
+  const avatar = typeof profileData.avatar === "string" ? profileData.avatar : "";
+  const portrait = typeof profileData.portrait === "string" ? profileData.portrait : "";
+  const level = typeof profileData.level === "number" ? profileData.level : 0;
+  const rating = typeof profileData.rating === "string" ? profileData.rating : "0 Ace XP";
 
   if (!name || !avatar || !portrait) return undefined;
 
@@ -134,7 +140,7 @@ function toPublicLocationProfile(data: Record<string, unknown>): PlayerLocation[
   };
 }
 
-export function toNearbyPlayers(locations: PlayerLocation[], origin: GeolocationCoordinates, currentUserId?: string): NearbyPlayer[] {
+export function toNearbyPlayers(locations: PlayerLocation[], origin: Pick<GeolocationCoordinates, "latitude" | "longitude">, currentUserId?: string): NearbyPlayer[] {
   return locations
     .filter((location) => location.id !== currentUserId)
     .map((location, index) => {

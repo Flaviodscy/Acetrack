@@ -100,6 +100,41 @@ export async function listFriendRequests(userId: string) {
   return readLocalList<FriendRequest>(LOCAL_REQUESTS_KEY).filter((request) => request.toUserId === userId && request.status === "pending");
 }
 
+export async function listSentFriendRequests(userId: string) {
+  const db = await getFirebaseDb();
+
+  if (db) {
+    const { collection, getDocs, query, where } = await import("firebase/firestore");
+    const snapshot = await getDocs(query(collection(db, "socialRequests"), where("fromUserId", "==", userId)));
+    return snapshot.docs
+      .map((doc) => ({ ...doc.data(), id: doc.id }) as FriendRequest)
+      .filter((request) => request.status === "pending");
+  }
+
+  return readLocalList<FriendRequest>(LOCAL_REQUESTS_KEY).filter((request) => request.fromUserId === userId && request.status === "pending");
+}
+
+export async function subscribeToFriendRequests(
+  userId: string,
+  direction: "incoming" | "sent",
+  onRequests: (requests: FriendRequest[]) => void,
+  onError?: (error: unknown) => void
+) {
+  const db = await getFirebaseDb();
+  if (!db) {
+    onRequests(direction === "incoming" ? await listFriendRequests(userId) : await listSentFriendRequests(userId));
+    return () => undefined;
+  }
+
+  const { collection, onSnapshot, query, where } = await import("firebase/firestore");
+  const field = direction === "incoming" ? "toUserId" : "fromUserId";
+  return onSnapshot(query(collection(db, "socialRequests"), where(field, "==", userId)), (snapshot) => {
+    onRequests(snapshot.docs
+      .map((doc) => ({ ...doc.data(), id: doc.id }) as FriendRequest)
+      .filter((request) => request.status === "pending"));
+  }, (error) => onError?.(error));
+}
+
 export async function acceptFriendRequest(request: FriendRequest, currentProfile: UserProfile) {
   const now = new Date().toISOString();
   const acceptedRequest: FriendRequest = { ...request, status: "accepted", updatedAt: now };
@@ -147,6 +182,19 @@ export async function listFriendships(userId: string) {
   return readLocalList<Friendship>(LOCAL_FRIENDS_KEY).filter((friendship) => friendship.userIds.includes(userId));
 }
 
+export async function subscribeToFriendships(userId: string, onFriendships: (friendships: Friendship[]) => void, onError?: (error: unknown) => void) {
+  const db = await getFirebaseDb();
+  if (!db) {
+    onFriendships(await listFriendships(userId));
+    return () => undefined;
+  }
+
+  const { collection, onSnapshot, query, where } = await import("firebase/firestore");
+  return onSnapshot(query(collection(db, "friendships"), where("userIds", "array-contains", userId)), (snapshot) => {
+    onFriendships(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }) as Friendship));
+  }, (error) => onError?.(error));
+}
+
 export async function sendSocialAction(type: SocialAction["type"], fromUserId: string, fromProfile: UserProfile, toUserId: string, toProfile: SocialProfileSnapshot) {
   if (fromUserId === toUserId) throw new Error("Choose another player.");
   const action = createSocialAction(type, fromUserId, toUserId, toSocialProfile(fromProfile), toProfile);
@@ -174,6 +222,21 @@ export async function listIncomingSocialActions(userId: string) {
   }
 
   return readLocalList<SocialAction>(LOCAL_ACTIONS_KEY).filter((action) => action.toUserId === userId && action.status === "pending");
+}
+
+export async function subscribeToIncomingSocialActions(userId: string, onActions: (actions: SocialAction[]) => void, onError?: (error: unknown) => void) {
+  const db = await getFirebaseDb();
+  if (!db) {
+    onActions(await listIncomingSocialActions(userId));
+    return () => undefined;
+  }
+
+  const { collection, onSnapshot, query, where } = await import("firebase/firestore");
+  return onSnapshot(query(collection(db, "socialActions"), where("toUserId", "==", userId)), (snapshot) => {
+    onActions(snapshot.docs
+      .map((doc) => ({ ...doc.data(), id: doc.id }) as SocialAction)
+      .filter((action) => action.status === "pending"));
+  }, (error) => onError?.(error));
 }
 
 export async function updateSocialActionStatus(action: SocialAction, status: SocialAction["status"]) {
@@ -227,6 +290,27 @@ export async function listFriendMessages(friendshipId: string, userId: string) {
   return readLocalList<SocialMessage>(LOCAL_MESSAGES_KEY)
     .filter((message) => message.friendshipId === friendshipId)
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+}
+
+export async function subscribeToFriendMessages(
+  friendshipId: string,
+  userId: string,
+  onMessages: (messages: SocialMessage[]) => void,
+  onError?: (error: unknown) => void
+) {
+  const db = await getFirebaseDb();
+  if (!db) {
+    onMessages(await listFriendMessages(friendshipId, userId));
+    return () => undefined;
+  }
+
+  const { collection, onSnapshot, query, where } = await import("firebase/firestore");
+  return onSnapshot(query(collection(db, "socialMessages"), where("userIds", "array-contains", userId)), (snapshot) => {
+    onMessages(snapshot.docs
+      .map((doc) => ({ ...doc.data(), id: doc.id }) as SocialMessage)
+      .filter((message) => message.friendshipId === friendshipId)
+      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)));
+  }, (error) => onError?.(error));
 }
 
 function createFriendRequest(fromUserId: string, toUserId: string, fromProfile: SocialProfileSnapshot, toProfile: SocialProfileSnapshot): FriendRequest {

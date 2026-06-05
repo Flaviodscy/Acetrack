@@ -66,7 +66,7 @@ import {
   type MatchRemoteCommandType,
   type MatchRemoteSession
 } from "./backend/matchRemoteRepository";
-import { listPlayerLocations, savePlayerLocation, toNearbyPlayers } from "./backend/nearbyRepository";
+import { listPlayerLocations, savePlayerLocation, subscribeToPlayerLocations, toNearbyPlayers } from "./backend/nearbyRepository";
 import { createManagedUserProfile, deleteUserProfile, listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
 import {
   acceptFriendRequest,
@@ -75,9 +75,14 @@ import {
   listFriendships,
   listFriendMessages,
   listIncomingSocialActions,
+  listSentFriendRequests,
   sendFriendRequest,
   sendSocialMessage,
   sendSocialAction,
+  subscribeToFriendMessages,
+  subscribeToFriendRequests,
+  subscribeToFriendships,
+  subscribeToIncomingSocialActions,
   toSocialProfile,
   updateSocialActionStatus,
   type FriendRequest,
@@ -2020,6 +2025,7 @@ function SocialScreen({
   const [nearbyStatus, setNearbyStatus] = useState("Share GPS to find friends nearby");
   const [nearbyList, setNearbyList] = useState<NearbyPlayer[]>([]);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
+  const [sentFriendRequests, setSentFriendRequests] = useState<FriendRequest[]>([]);
   const [friends, setFriends] = useState<Friendship[]>([]);
   const [friendMessages, setFriendMessages] = useState<Record<string, SocialMessage[]>>({});
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
@@ -2042,6 +2048,7 @@ function SocialScreen({
   useEffect(() => {
     if (!currentUserId) {
       setFriendRequests([]);
+      setSentFriendRequests([]);
       setFriends([]);
       setFriendMessages({});
       setMessageDrafts({});
@@ -2050,8 +2057,89 @@ function SocialScreen({
       return;
     }
 
-    loadSocialConnections(currentUserId);
+    let isActive = true;
+    const unsubscribers: Array<() => void> = [];
+    setSocialStatus("Connecting live social activity...");
+
+    Promise.all([
+      subscribeToFriendRequests(currentUserId, "incoming", (requests) => {
+        if (!isActive) return;
+        setFriendRequests(requests);
+      }, (error) => {
+        if (isActive) setSocialStatus(getSocialErrorMessage(error));
+      }),
+      subscribeToFriendRequests(currentUserId, "sent", (requests) => {
+        if (!isActive) return;
+        setSentFriendRequests(requests);
+      }, (error) => {
+        if (isActive) setSocialStatus(getSocialErrorMessage(error));
+      }),
+      subscribeToFriendships(currentUserId, (friendships) => {
+        if (!isActive) return;
+        setFriends(friendships);
+        setSocialStatus(friendships.length ? `${friendships.length} friend${friendships.length === 1 ? "" : "s"} connected` : "No friends yet. Add real players from Nearby.");
+      }, (error) => {
+        if (isActive) setSocialStatus(getSocialErrorMessage(error));
+      }),
+      subscribeToIncomingSocialActions(currentUserId, (actions) => {
+        if (!isActive) return;
+        setSocialActions(actions);
+      }, (error) => {
+        if (isActive) setSocialStatus(getSocialErrorMessage(error));
+      })
+    ])
+      .then((nextUnsubscribers) => {
+        if (!isActive) {
+          nextUnsubscribers.forEach((unsubscribe) => unsubscribe());
+          return;
+        }
+
+        unsubscribers.push(...nextUnsubscribers);
+      })
+      .catch((error) => {
+        if (isActive) setSocialStatus(getSocialErrorMessage(error));
+      });
+
+    return () => {
+      isActive = false;
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+    };
   }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId || !friends.length) {
+      setFriendMessages({});
+      return;
+    }
+
+    let isActive = true;
+    const unsubscribers: Array<() => void> = [];
+    const activeFriendIds = new Set(friends.map((friendship) => friendship.id));
+    setFriendMessages((current) => Object.fromEntries(Object.entries(current).filter(([friendshipId]) => activeFriendIds.has(friendshipId))));
+
+    Promise.all(friends.map((friendship) => subscribeToFriendMessages(friendship.id, currentUserId, (messages) => {
+      if (!isActive) return;
+      setFriendMessages((current) => ({ ...current, [friendship.id]: messages }));
+    }, (error) => {
+      if (isActive) setSocialStatus(getSocialErrorMessage(error));
+    })))
+      .then((nextUnsubscribers) => {
+        if (!isActive) {
+          nextUnsubscribers.forEach((unsubscribe) => unsubscribe());
+          return;
+        }
+
+        unsubscribers.push(...nextUnsubscribers);
+      })
+      .catch((error) => {
+        if (isActive) setSocialStatus(getSocialErrorMessage(error));
+      });
+
+    return () => {
+      isActive = false;
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [currentUserId, friends]);
 
   useEffect(() => {
     if (!gpsAlwaysOn || activeTab !== "Nearby" || !navigator.geolocation) return;
@@ -2071,8 +2159,43 @@ function SocialScreen({
     return () => navigator.geolocation.clearWatch(watchId);
   }, [activeTab, appUser, gpsAlwaysOn, profile, setGpsAlwaysOn]);
 
+  useEffect(() => {
+    if (!currentUserId || !courtOrigin) return;
+
+    let isActive = true;
+    let unsubscribe: () => void = () => undefined;
+    subscribeToPlayerLocations((locations) => {
+      if (!isActive) return;
+      const livePlayers = rankNearbyPlayers(toNearbyPlayers(locations, courtOrigin, currentUserId));
+      setNearbyList(livePlayers);
+      setNearbyStatus(livePlayers.length ? `${livePlayers.length} live players found nearby` : "GPS is on. Waiting for friends nearby");
+    }, (error) => {
+      if (isActive) setNearbyStatus(getSocialErrorMessage(error));
+    })
+      .then((nextUnsubscribe) => {
+        if (!isActive) {
+          nextUnsubscribe();
+          return;
+        }
+
+        unsubscribe = nextUnsubscribe;
+      })
+      .catch((error) => {
+        if (isActive) setNearbyStatus(getSocialErrorMessage(error));
+      });
+
+    return () => {
+      isActive = false;
+      unsubscribe();
+    };
+  }, [courtOrigin, currentUserId]);
+
   async function syncNearbyPosition(position: GeolocationPosition, announce: boolean) {
     const activeUser = appUser ?? await getCurrentAppUser();
+    if (activeUser.mode !== "firebase") {
+      throw new Error("Sign in to share GPS with nearby players.");
+    }
+
     const gpsPoint = toGpsPoint(position.coords);
     setCourtOrigin(gpsPoint);
     await savePlayerLocation(activeUser.id, profile, position.coords);
@@ -2089,12 +2212,14 @@ function SocialScreen({
     if (!userId) return;
     setSocialStatus("Loading social activity...");
     try {
-      const [requests, friendships, actions] = await Promise.all([
+      const [requests, sentRequests, friendships, actions] = await Promise.all([
         listFriendRequests(userId),
+        listSentFriendRequests(userId),
         listFriendships(userId),
         listIncomingSocialActions(userId)
       ]);
       setFriendRequests(requests);
+      setSentFriendRequests(sentRequests);
       setFriends(friendships);
       setSocialActions(actions);
       await loadFriendMessageThreads(friendships, userId);
@@ -2181,17 +2306,27 @@ function SocialScreen({
   }
 
   const visibleNearbyPlayers = nearbyList.filter((player) => player.distanceKm <= radiusKm);
-  const requestCount = friendRequests.length + socialActions.length;
+  const requestCount = friendRequests.length + sentFriendRequests.length + socialActions.length;
 
   function updateRadius(value: number) {
     setRadiusKm(Math.max(1, Math.min(250, Math.round(value) || 1)));
   }
 
   async function addFriend(player: NearbyPlayer) {
-    const activeUser = appUser ?? await getCurrentAppUser();
-    await sendFriendRequest(activeUser.id, profile, player.id, nearbyPlayerToSocialProfile(player));
-    onAction(`Friend request sent to ${player.name}`);
-    onSocialChanged();
+    try {
+      const activeUser = appUser ?? await getCurrentAppUser();
+      if (activeUser.mode !== "firebase") {
+        onAction("Sign in to add friends across devices");
+        return;
+      }
+
+      const result = await sendFriendRequest(activeUser.id, profile, player.id, nearbyPlayerToSocialProfile(player));
+      setSentFriendRequests((current) => upsertFriendRequest(current, result.request));
+      onAction(`Friend request sent to ${player.name}`);
+      onSocialChanged();
+    } catch (error) {
+      onAction(getSocialErrorMessage(error));
+    }
   }
 
   async function challengePlayer(player: NearbyPlayer | SocialProfileSnapshot, playerId: string) {
@@ -2242,6 +2377,7 @@ function SocialScreen({
 
   async function acceptRequest(request: FriendRequest) {
     await acceptFriendRequest(request, profile);
+    setFriendRequests((current) => current.filter((item) => item.id !== request.id));
     onAction(`${request.fromProfile.name} added`);
     await loadSocialConnections();
     onSocialChanged();
@@ -2249,7 +2385,16 @@ function SocialScreen({
 
   async function declineRequest(request: FriendRequest) {
     await declineFriendRequest(request);
+    setFriendRequests((current) => current.filter((item) => item.id !== request.id));
     onAction(`${request.fromProfile.name} declined`);
+    await loadSocialConnections();
+    onSocialChanged();
+  }
+
+  async function cancelSentRequest(request: FriendRequest) {
+    await declineFriendRequest(request);
+    setSentFriendRequests((current) => current.filter((item) => item.id !== request.id));
+    onAction(`Request to ${request.toProfile.name} canceled`);
     await loadSocialConnections();
     onSocialChanged();
   }
@@ -2322,27 +2467,35 @@ function SocialScreen({
           />
           <p className="list-label">Nearby players</p>
           <div className="player-list">
-            {visibleNearbyPlayers.map((player) => (
-              <article className={player.isLive ? "player-row live-player" : "player-row"} key={player.id}>
-                <div className="player-card-head">
-                  <strong className={player.rank <= 3 ? "rank active" : "rank"}>{player.rank}</strong>
-                  <Portrait className={player.portrait} initials={player.avatar} />
-                  <div className="player-card-copy">
-                    <h3>{player.name}{player.isLive && <span className="live-chip">GPS</span>}</h3>
-                    <p>Ace level <b>{player.level}</b>{player.rating && <span>{player.rating}</span>}</p>
-                    <p><MapPin size={13} /> {player.distance} away</p>
+            {visibleNearbyPlayers.map((player) => {
+              const friendshipStatus = getNearbyFriendshipStatus(friends, friendRequests, sentFriendRequests, player.id, currentUserId);
+              return (
+                <article className={player.isLive ? "player-row live-player" : "player-row"} key={player.id}>
+                  <div className="player-card-head">
+                    <strong className={player.rank <= 3 ? "rank active" : "rank"}>{player.rank}</strong>
+                    <Portrait className={player.portrait} initials={player.avatar} />
+                    <div className="player-card-copy">
+                      <h3>{player.name}{player.isLive && <span className="live-chip">GPS</span>}</h3>
+                      <p>Ace level <b>{player.level}</b>{player.rating && <span>{player.rating}</span>}</p>
+                      <p><MapPin size={13} /> {player.distance} away</p>
+                    </div>
                   </div>
-                </div>
-                <div className="player-card-stats">
-                  <span className="streak"><Flame size={16} /> {player.streak} day streak</span>
-                  <div className="points"><strong>{player.points.toLocaleString()}</strong><span>PTS</span></div>
-                </div>
-                <div className="player-actions">
-                  <button disabled={isFriend(friends, player.id)} onClick={() => addFriend(player)}>{isFriend(friends, player.id) ? "Friend" : "Add"}</button>
-                  <button onClick={() => challengePlayer(player, player.id)}>Challenge</button>
-                </div>
-              </article>
-            ))}
+                  <div className="player-card-stats">
+                    <span className="streak"><Flame size={16} /> {player.streak} day streak</span>
+                    <div className="points"><strong>{player.points.toLocaleString()}</strong><span>PTS</span></div>
+                  </div>
+                  <div className="player-actions">
+                    <button
+                      disabled={friendshipStatus.kind === "friend" || friendshipStatus.kind === "sent"}
+                      onClick={() => friendshipStatus.kind === "incoming" && friendshipStatus.request ? acceptRequest(friendshipStatus.request) : addFriend(player)}
+                    >
+                      {friendshipStatus.label}
+                    </button>
+                    <button onClick={() => challengePlayer(player, player.id)}>Challenge</button>
+                  </div>
+                </article>
+              );
+            })}
             {!visibleNearbyPlayers.length && (
               <EmptyState
                 icon={MapPin}
@@ -2431,6 +2584,16 @@ function SocialScreen({
               <div className="request-actions">
                 <button aria-label={`Accept ${request.fromProfile.name}`} onClick={() => acceptRequest(request)}><Check size={17} /> Accept</button>
                 <button aria-label={`Decline ${request.fromProfile.name}`} className="quiet" onClick={() => declineRequest(request)}><X size={17} /> Decline</button>
+              </div>
+            </article>
+          ))}
+          {sentFriendRequests.map((request) => (
+            <article className="request-row" key={`sent-${request.id}`}>
+              <Portrait className={request.toProfile.portrait} initials={request.toProfile.avatar} />
+              <div><h3>{request.toProfile.name}</h3><p>{request.toProfile.rating} · Waiting for response</p></div>
+              <div className="request-actions">
+                <button disabled><Clock3 size={17} /> Pending</button>
+                <button aria-label={`Cancel request to ${request.toProfile.name}`} className="quiet" onClick={() => cancelSentRequest(request)}><X size={17} /> Cancel</button>
               </div>
             </article>
           ))}
@@ -3889,6 +4052,36 @@ function nearbyPlayerToSocialProfile(player: NearbyPlayer): SocialProfileSnapsho
 
 function isFriend(friendships: Friendship[], playerId: string) {
   return friendships.some((friendship) => friendship.userIds.includes(playerId));
+}
+
+function upsertFriendRequest(requests: FriendRequest[], request: FriendRequest) {
+  return [request, ...requests.filter((item) => item.id !== request.id)];
+}
+
+function getNearbyFriendshipStatus(
+  friendships: Friendship[],
+  incomingRequests: FriendRequest[],
+  sentRequests: FriendRequest[],
+  playerId: string,
+  currentUserId?: string
+): { kind: "add" | "friend" | "incoming" | "sent"; label: string; request?: FriendRequest } {
+  if (isFriend(friendships, playerId)) return { kind: "friend", label: "Friend" };
+
+  const incoming = incomingRequests.find((request) => (
+    request.status === "pending" &&
+    request.fromUserId === playerId &&
+    (!currentUserId || request.toUserId === currentUserId)
+  ));
+  if (incoming) return { kind: "incoming", label: "Accept", request: incoming };
+
+  const sent = sentRequests.find((request) => (
+    request.status === "pending" &&
+    request.toUserId === playerId &&
+    (!currentUserId || request.fromUserId === currentUserId)
+  ));
+  if (sent) return { kind: "sent", label: "Pending", request: sent };
+
+  return { kind: "add", label: "Add" };
 }
 
 function getFriendId(friendship: Friendship, currentUserId?: string) {

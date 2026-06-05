@@ -10547,6 +10547,10 @@ body,
   text-decoration: none;
 }
 
+.text-button {
+  min-height: 44px;
+}
+
 .setup-exit-button,
 .sound-pill {
   min-height: 44px;
