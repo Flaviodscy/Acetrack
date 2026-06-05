@@ -29,6 +29,8 @@ AceTrack should feel real, reliable, minimal, premium, and consistent.
 
 - Home should show real pending challenges as a clear card/banner with Accept and Dismiss.
 - Match setup and live scoring should be usable in portrait and landscape.
+- Singles match setup must show only two player fields. Do not render disabled or empty partner boxes unless doubles is selected.
+- Live Match should prioritize tripod use: big readable score, simple point controls, correct serving side, and a clean full-screen landscape layout.
 - Match Cards should use real saved match data and produce a shareable social card.
 - Social should support real nearby discovery, friend requests, friends, pokes, and challenges.
 - Profile should show earned points, match level, skills, vote counts, and editable identity/equipment.

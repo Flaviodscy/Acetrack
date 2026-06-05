@@ -1487,7 +1487,24 @@ function MatchSetupScreen({
   onUpdate: (options: MatchOptions) => void;
 }) {
   const currentOptions = normalizeMatchOptions(options, profileName);
-  const playerChoices = getSetupPlayerChoices(currentOptions);
+  const visibleNameIndexes: Array<0 | 1> = currentOptions.singles ? [0] : [0, 1];
+  const serverSide = currentOptions.server >= 2 ? 1 : 0;
+  const serverChoices = [
+    {
+      side: 0,
+      server: 0 as const,
+      players: currentOptions.singles
+        ? [{ label: "1", name: currentOptions.sideA[0] }]
+        : currentOptions.sideA.map((name, index) => ({ label: String(index + 1), name }))
+    },
+    {
+      side: 1,
+      server: 2 as const,
+      players: currentOptions.singles
+        ? [{ label: "2", name: currentOptions.sideB[0] }]
+        : currentOptions.sideB.map((name, index) => ({ label: String(index + 3), name }))
+    }
+  ];
 
   function updateSide(side: "sideA" | "sideB", index: 0 | 1, value: string) {
     const nextSide = [...currentOptions[side]] as [string, string];
@@ -1506,6 +1523,14 @@ function MatchSetupScreen({
     onAction("Sides swapped");
   }
 
+  function toggleSingles(enabled: boolean) {
+    onUpdate({
+      ...currentOptions,
+      singles: enabled,
+      server: enabled ? (currentOptions.server >= 2 ? 2 : 0) : currentOptions.server
+    });
+  }
+
   return (
     <section className="screen content match-setup-screen">
       <header className="match-setup-hero">
@@ -1516,13 +1541,14 @@ function MatchSetupScreen({
         <h1>Set the court.</h1>
       </header>
 
-      <div className="setup-name-grid">
-        {currentOptions.sideA.map((name, index) => (
+      <div className={currentOptions.singles ? "setup-name-grid singles" : "setup-name-grid doubles"}>
+        {visibleNameIndexes.map((index) => (
           <label className="setup-name-card" key={`a-${index}`}>
+            <span>{index === 0 ? "Player" : "Partner"}</span>
             <input
               aria-label={`Team one player ${index + 1}`}
-              disabled={!currentOptions.customNames || (currentOptions.singles && index === 1)}
-              value={currentOptions.singles && index === 1 ? "" : name}
+              disabled={!currentOptions.customNames}
+              value={currentOptions.sideA[index]}
               onChange={(event) => updateSide("sideA", index as 0 | 1, event.target.value)}
               placeholder={index === 0 ? "Player 1" : "Partner"}
             />
@@ -1530,12 +1556,13 @@ function MatchSetupScreen({
           </label>
         ))}
         <button className="swap-sides-button" aria-label="Swap sides" onClick={swapSides}><Shuffle size={24} /></button>
-        {currentOptions.sideB.map((name, index) => (
+        {visibleNameIndexes.map((index) => (
           <label className="setup-name-card" key={`b-${index}`}>
+            <span>{index === 0 ? "Opponent" : "Partner"}</span>
             <input
               aria-label={`Team two player ${index + 1}`}
-              disabled={!currentOptions.customNames || (currentOptions.singles && index === 1)}
-              value={currentOptions.singles && index === 1 ? "" : name}
+              disabled={!currentOptions.customNames}
+              value={currentOptions.sideB[index]}
               onChange={(event) => updateSide("sideB", index as 0 | 1, event.target.value)}
               placeholder={index === 0 ? "Opponent" : "Partner"}
             />
@@ -1546,7 +1573,7 @@ function MatchSetupScreen({
 
       <div className="setup-toggle-row">
         <label><input checked={currentOptions.customNames} onChange={(event) => onUpdate({ ...currentOptions, customNames: event.target.checked })} type="checkbox" /> Custom Names</label>
-        <label><input checked={currentOptions.singles} onChange={(event) => onUpdate({ ...currentOptions, singles: event.target.checked })} type="checkbox" /> Singles</label>
+        <label><input checked={currentOptions.singles} onChange={(event) => toggleSingles(event.target.checked)} type="checkbox" /> Singles</label>
         <button className="sound-pill" onClick={() => onUpdate({ ...currentOptions, soundEnabled: !currentOptions.soundEnabled })}>
           {currentOptions.soundEnabled ? <Volume2 size={17} /> : <VolumeX size={17} />} Sound
         </button>
@@ -1576,14 +1603,14 @@ function MatchSetupScreen({
       <section className="setup-choice-section">
         <h2>Who serves first?</h2>
         <div className="choice-grid two">
-          {[0, 1].map((side) => (
+          {serverChoices.map((choice) => (
             <button
-              className={Math.floor(currentOptions.server / 2) === side ? "choice-card active compact" : "choice-card compact"}
-              key={side}
-              onClick={() => onUpdate({ ...currentOptions, server: (side * 2) as 0 | 2 })}
+              className={serverSide === choice.side ? "choice-card active compact" : "choice-card compact"}
+              key={choice.side}
+              onClick={() => onUpdate({ ...currentOptions, server: choice.server })}
             >
-              {playerChoices.slice(side * 2, side * 2 + 2).map((choice) => (
-                <span key={choice.index}><b>{choice.index + 1}</b> {choice.name}</span>
+              {choice.players.map((player) => (
+                <span key={player.label}><b>{player.label}</b> {player.name}</span>
               ))}
             </button>
           ))}
@@ -1669,6 +1696,8 @@ function LiveMatchScreen({
     `winner ${compactSideLabels[1]}`,
     "nice slice"
   ];
+  const scoreClassA = pointDisplay[0].length > 2 ? "stage-score long" : "stage-score";
+  const scoreClassB = pointDisplay[1].length > 2 ? "stage-score long" : "stage-score";
 
   return (
     <section className="screen content live-screen">
@@ -1695,8 +1724,8 @@ function LiveMatchScreen({
           <strong>{sideLabels[1]}</strong>
           {server === 1 && <span>Serving</span>}
         </div>
-        <div className="stage-score">{pointDisplay[0]}</div>
-        <div className="stage-score">{pointDisplay[1]}</div>
+        <div className={scoreClassA}>{pointDisplay[0]}</div>
+        <div className={scoreClassB}>{pointDisplay[1]}</div>
         <div className="mini-set-floating">
           <SetTable playerNames={playerNames} profile={profile} sets={sets} />
         </div>
@@ -3921,7 +3950,7 @@ function normalizeMatchOptions(options: MatchOptions, fallbackName: string): Mat
   };
 
   return normalized.singles
-    ? { ...normalized, server: normalized.server > 1 ? 0 : normalized.server }
+    ? { ...normalized, server: normalized.server >= 2 ? 2 : 0 }
     : normalized;
 }
 
@@ -3944,13 +3973,6 @@ function getCompactSideName(name: string) {
     .map((part) => part.trim().split(" ")[0])
     .filter(Boolean)
     .join(" / ");
-}
-
-function getSetupPlayerChoices(options: MatchOptions) {
-  return [...options.sideA, ...options.sideB].map((name, index) => ({
-    index,
-    name: options.singles && (index === 1 || index === 3) ? "Partner" : name
-  }));
 }
 
 function getSpeechRecognitionConstructor() {
