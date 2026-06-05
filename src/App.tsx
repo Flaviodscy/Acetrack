@@ -154,24 +154,27 @@ const emptyMatchStats: MatchStatsInput = {
   unforcedErrors: [0, 0]
 };
 
-const famousTennisPlayers = [
-  "Roger Federer",
-  "Serena Williams",
-  "Rafael Nadal",
-  "Novak Djokovic",
-  "Venus Williams",
-  "Carlos Alcaraz",
-  "Iga Swiatek",
-  "Coco Gauff",
-  "Naomi Osaka",
-  "Maria Sharapova",
-  "Steffi Graf",
-  "Andre Agassi",
-  "Pete Sampras",
-  "Billie Jean King",
-  "Martina Navratilova",
-  "Jannik Sinner"
-];
+const famousTennisPlayerProfiles = [
+  { name: "Roger Federer", style: "all-court elegance", skills: [94, 91, 89, 88, 92, 90] },
+  { name: "Serena Williams", style: "power serve and first strike", skills: [91, 88, 98, 80, 76, 88] },
+  { name: "Rafael Nadal", style: "heavy topspin and relentless defense", skills: [96, 89, 86, 78, 84, 98] },
+  { name: "Novak Djokovic", style: "returning, balance, and backhand control", skills: [90, 97, 87, 82, 86, 97] },
+  { name: "Venus Williams", style: "aggressive baseline and net pressure", skills: [88, 86, 93, 86, 74, 90] },
+  { name: "Carlos Alcaraz", style: "explosive attack and drop-shot creativity", skills: [96, 91, 89, 87, 91, 98] },
+  { name: "Iga Swiatek", style: "forehand pressure and footwork", skills: [95, 89, 84, 77, 83, 96] },
+  { name: "Coco Gauff", style: "movement, defense, and improving attack", skills: [87, 90, 89, 82, 78, 97] },
+  { name: "Naomi Osaka", style: "serve plus forehand power", skills: [94, 86, 95, 72, 74, 86] },
+  { name: "Maria Sharapova", style: "flat baseline aggression", skills: [91, 89, 91, 72, 70, 84] },
+  { name: "Steffi Graf", style: "forehand, slice, and speed", skills: [98, 84, 87, 82, 95, 96] },
+  { name: "Andre Agassi", style: "early ball striking and return pressure", skills: [92, 94, 84, 75, 80, 88] },
+  { name: "Pete Sampras", style: "serve, volley, and clutch points", skills: [88, 84, 99, 96, 86, 89] },
+  { name: "Billie Jean King", style: "complete all-court problem solving", skills: [88, 87, 86, 94, 86, 90] },
+  { name: "Martina Navratilova", style: "serve-volley and athletic court coverage", skills: [88, 90, 90, 99, 88, 96] },
+  { name: "Jannik Sinner", style: "clean power and baseline timing", skills: [94, 93, 91, 78, 78, 94] },
+  { name: "João Fonseca", style: "fearless forehand and rising baseline power", skills: [92, 86, 88, 74, 76, 90] }
+] as const;
+
+const famousTennisPlayers = famousTennisPlayerProfiles.map((player) => player.name);
 
 const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
   { screen: "home", label: "Play", icon: Home },
@@ -2242,6 +2245,7 @@ function ProfileScreen({
   const [isSaving, setIsSaving] = useState(false);
   const [isLocatingHome, setIsLocatingHome] = useState(false);
   const [homeStatus, setHomeStatus] = useState("");
+  const [editStatus, setEditStatus] = useState("");
 
   useEffect(() => {
     setDraft(profile);
@@ -2264,20 +2268,20 @@ function ProfileScreen({
     }));
   }
 
-  function updatePhoto(file?: File) {
+  async function updatePhoto(file?: File) {
     if (!file) return;
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") {
-        const photoDataUrl = reader.result;
-        setDraft((current) => ({ ...current, photoDataUrl }));
-      }
-    });
-    reader.readAsDataURL(file);
+    setEditStatus("Preparing profile photo...");
+    try {
+      const photoDataUrl = await resizeProfilePhoto(file);
+      setDraft((current) => ({ ...current, photoDataUrl }));
+      setEditStatus("Photo ready. Tap Save changes.");
+    } catch (error) {
+      setEditStatus(error instanceof Error ? error.message : "Could not prepare profile photo");
+    }
   }
 
   async function saveProfile() {
-    const nextProfile = {
+    const nextProfile = normalizeProfileDraft({
       ...draft,
       avatar: getInitials(draft.name),
       shortName: getShortName(draft.name),
@@ -2285,11 +2289,21 @@ function ProfileScreen({
       rating: `${progression.points} pts`,
       xp: progression.xp,
       xpText: progression.xpText
-    };
+    });
     setIsSaving(true);
-    await onSaveProfile(nextProfile);
-    setIsSaving(false);
-    setIsEditing(false);
+    setEditStatus("Saving profile...");
+    try {
+      await onSaveProfile(nextProfile);
+      setDraft(nextProfile);
+      setEditStatus("Profile saved");
+      setIsEditing(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not save profile";
+      setEditStatus(message);
+      onAction(message);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   async function saveHomeArea() {
@@ -2325,6 +2339,9 @@ function ProfileScreen({
       setIsLocatingHome(false);
     }
   }
+
+  const selectedPro = getFamousPlayerProfile(profile.favoritePro);
+  const comparisonPro = selectedPro ?? getFamousPlayerProfile("João Fonseca");
 
   return (
     <section className="screen content profile-screen">
@@ -2431,6 +2448,7 @@ function ProfileScreen({
             <button className="hero-action compact" disabled={isSaving} onClick={saveProfile}>{isSaving ? "Saving..." : "Save changes"}</button>
             <button className="ghost-button" onClick={() => { setDraft(profile); setIsEditing(false); }}>Cancel</button>
           </div>
+          {editStatus && <p className="profile-edit-status">{editStatus}</p>}
         </article>
       )}
 
@@ -2503,18 +2521,35 @@ function ProfileScreen({
 
       <article className="pro-card">
         <div className="section-row">
-          <h2>Performance profile</h2>
+          <h2>Compare with pros</h2>
           <button className="text-button" onClick={() => setIsEditing(true)}>Edit</button>
         </div>
-        <div className="pro-content">
-          <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
-          <div><strong>{profile.hand}</strong><span>{profile.favoritePro ? `Inspired by ${profile.favoritePro}` : "Choose a tennis inspiration"}</span></div>
-          <div className="pro-bars">
-            {profile.skills.slice(0, 6).map(([label, value]) => (
-              <span key={label}><b>{getSkillCode(label)}</b><i style={{ height: `${Math.max(8, value)}%` }} /></span>
-            ))}
+        <div className="pro-compare-head">
+          <div>
+            <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
+            <div><strong>{profile.hand}</strong><span>Your current skills</span></div>
+          </div>
+          <div>
+            <span className="pro-badge">Pro</span>
+            <div><strong>{comparisonPro?.name ?? "Choose a pro"}</strong><span>{comparisonPro?.style ?? "Pick an inspiration in Edit"}</span></div>
           </div>
         </div>
+        <div className="pro-comparison-bars">
+          {profile.skills.slice(0, 6).map(([label, value], index) => {
+            const proValue = comparisonPro?.skills[index] ?? 0;
+            return (
+              <div className="pro-comparison-row" key={label}>
+                <span>{getSkillCode(label)}</span>
+                <div aria-label={`${label} comparison`}>
+                  <i className="you" style={{ width: `${value}%` }} />
+                  <i className="pro" style={{ width: `${proValue}%` }} />
+                </div>
+                <strong>{(value / 10).toFixed(1)}</strong>
+              </div>
+            );
+          })}
+        </div>
+        <p className="pro-card-note">{selectedPro ? `You are comparing yourself with ${selectedPro.name}.` : "Default comparison shown with João Fonseca. Tap Edit to choose Federer, Serena, Nadal, Djokovic, Alcaraz, João Fonseca, and more."}</p>
       </article>
     </section>
   );
@@ -3609,6 +3644,12 @@ function getSmsInviteHref(playerName: string) {
   return `sms:&body=${encodeURIComponent(body)}`;
 }
 
+function getFamousPlayerProfile(name: string) {
+  const normalizedName = name.trim().toLowerCase();
+  if (!normalizedName) return undefined;
+  return famousTennisPlayerProfiles.find((player) => player.name.toLowerCase() === normalizedName);
+}
+
 function useElapsedTime(startedAt: number | undefined, running: boolean) {
   const [now, setNow] = useState(Date.now());
 
@@ -3633,6 +3674,40 @@ function formatDuration(milliseconds: number) {
 
   if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function resizeProfilePhoto(file: File) {
+  if (!file.type.startsWith("image/")) {
+    return Promise.reject(new Error("Choose an image file"));
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Could not read profile photo"));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Could not prepare profile photo"));
+      image.onload = () => {
+        const size = 480;
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d");
+        if (!context) {
+          reject(new Error("Could not prepare profile photo"));
+          return;
+        }
+
+        const sourceSize = Math.min(image.naturalWidth, image.naturalHeight);
+        const sourceX = Math.max(0, (image.naturalWidth - sourceSize) / 2);
+        const sourceY = Math.max(0, (image.naturalHeight - sourceSize) / 2);
+        canvas.width = size;
+        canvas.height = size;
+        context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, size, size);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      image.src = String(reader.result ?? "");
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function incrementPair(pair: [number, number], player: 0 | 1): [number, number] {

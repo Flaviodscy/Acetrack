@@ -25,7 +25,11 @@ export async function loadUserProfile(userId: string): Promise<{ mode: BackendMo
 export async function saveUserProfile(userId: string, profile: UserProfile): Promise<{ mode: BackendMode }> {
   const db = await getFirebaseDb();
 
-  saveLocalProfile(profile);
+  try {
+    saveLocalProfile(profile);
+  } catch (error) {
+    console.warn("Local profile save failed.", error);
+  }
 
   if (db) {
     try {

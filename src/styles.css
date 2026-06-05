@@ -10308,3 +10308,130 @@ body,
     padding: 22px;
   }
 }
+
+/* Profile pro comparison: no cramped labels, clear benchmark bars. */
+.profile-edit-status {
+  margin: 0;
+  color: var(--accent-strong);
+  font-size: 0.88rem;
+  font-weight: 850;
+  line-height: 1.45;
+}
+
+.profile-screen .pro-card {
+  gap: 18px;
+}
+
+.pro-compare-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+
+.pro-compare-head > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.pro-compare-head .portrait {
+  width: 58px;
+  height: 58px;
+}
+
+.pro-compare-head strong,
+.pro-compare-head span {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pro-compare-head strong {
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.pro-compare-head span {
+  margin-top: 4px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.pro-badge {
+  width: 58px;
+  height: 58px;
+  display: grid !important;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #1b2019 !important;
+  font-size: 0.78rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.pro-comparison-bars {
+  display: grid;
+  gap: 12px;
+}
+
+.pro-comparison-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 10px;
+}
+
+.pro-comparison-row > span,
+.pro-comparison-row strong {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.pro-comparison-row strong {
+  color: var(--ink);
+  text-align: right;
+}
+
+.pro-comparison-row > div {
+  display: grid;
+  gap: 5px;
+}
+
+.pro-comparison-row i {
+  display: block;
+  height: 8px;
+  min-width: 8px;
+  border-radius: 999px;
+}
+
+.pro-comparison-row i.you {
+  background: var(--accent-strong);
+}
+
+.pro-comparison-row i.pro {
+  background: rgba(29, 37, 27, 0.22);
+}
+
+.pro-card-note {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+@media (max-width: 620px) {
+  .pro-compare-head {
+    grid-template-columns: 1fr;
+  }
+
+  .pro-compare-head > div {
+    padding: 12px;
+  }
+}
