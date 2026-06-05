@@ -1540,18 +1540,18 @@ function HighlightsScreen({
         <h1>Match Cards</h1>
         <p>Saved matches and share cards from real scoring data.</p>
       </header>
-      <article className="feature-card">
-        <div>
+      <article className="feature-card match-card-hero">
+        <div className="match-card-hero-copy">
           <p className="eyebrow">Share your match</p>
           <h2>Create a match card.</h2>
           <p>{shareRecord.finalScore === "In progress" ? "Score a match first, or generate a draft from the current board." : shareRecord.finalScore}</p>
         </div>
-        <div className="share-preview">
+        <div className="share-preview match-card-hero-preview">
           <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
           <span>vs</span>
           <Portrait className={opponent.portrait} initials={getInitials(shareRecord.players[1])} />
         </div>
-        <button onClick={generateShareCard}>Generate Share Card <ArrowRight size={17} /></button>
+        <button className="match-card-hero-button" onClick={generateShareCard}>Generate Share Card <ArrowRight size={17} /></button>
       </article>
       {shareCard && (
         <article className="generated-share-card">

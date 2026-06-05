@@ -9664,3 +9664,101 @@ body,
     min-width: 240px;
   }
 }
+
+/* Dedicated Match Cards hero contract: no generic card rule can make it overlap. */
+.highlights-screen .match-card-hero {
+  position: relative;
+  z-index: 0;
+  contain: layout paint;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+  gap: clamp(18px, 4vw, 26px) !important;
+  width: 100%;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: clamp(22px, 5vw, 30px) !important;
+  margin: 0 !important;
+  overflow: clip !important;
+}
+
+.highlights-screen .match-card-hero > * {
+  position: static !important;
+  min-width: 0;
+  max-width: 100%;
+  transform: none !important;
+  rotate: 0deg !important;
+}
+
+.highlights-screen .match-card-hero-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.highlights-screen .match-card-hero-copy h2,
+.highlights-screen .match-card-hero-copy p {
+  margin: 0;
+}
+
+.highlights-screen .match-card-hero-preview {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 100% !important;
+  height: auto !important;
+  min-height: clamp(136px, 32vw, 176px) !important;
+  padding: clamp(18px, 4vw, 24px);
+  flex: 0 0 auto;
+}
+
+.highlights-screen .match-card-hero-preview .portrait {
+  width: clamp(58px, 16vw, 74px);
+  height: clamp(58px, 16vw, 74px);
+}
+
+.highlights-screen .match-card-hero-button {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 56px !important;
+  display: inline-flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.highlights-screen .match-card-hero + .section-row {
+  margin-top: clamp(8px, 2vw, 18px) !important;
+}
+
+@supports not (overflow: clip) {
+  .highlights-screen .match-card-hero {
+    overflow: hidden !important;
+  }
+}
+
+@media (min-width: 900px) {
+  .highlights-screen .match-card-hero {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 0.54fr) !important;
+    align-items: center !important;
+  }
+
+  .highlights-screen .match-card-hero-copy {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .highlights-screen .match-card-hero-preview {
+    grid-column: 2 !important;
+    grid-row: 1 / span 2 !important;
+    min-height: 180px !important;
+  }
+
+  .highlights-screen .match-card-hero-button {
+    grid-column: 1 !important;
+    grid-row: 2;
+    justify-self: start !important;
+    width: fit-content !important;
+    min-width: 240px !important;
+  }
+}
