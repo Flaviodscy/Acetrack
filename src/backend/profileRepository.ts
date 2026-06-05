@@ -63,6 +63,7 @@ export async function createManagedUserProfile(profile: UserProfile, email?: str
       email: email?.trim().toLowerCase() || "",
       updatedAt: new Date().toISOString()
     });
+    await publishPlayerDirectoryProfile(userId, profile);
     return { mode: "firebase", userId };
   }
 

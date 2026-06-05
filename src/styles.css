@@ -12014,3 +12014,460 @@ body,
     min-height: 50px;
   }
 }
+
+/* Responsive audit pass: keep every screen reachable, unclipped, and nav-safe. */
+@media (max-width: 1023px) {
+  .app-shell:not(.is-live-shell) > .phone-frame:not(.is-live):not(.auth-frame) {
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen.content {
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: max(42px, calc(env(safe-area-inset-bottom, 0px) + 34px)) !important;
+    scroll-padding-bottom: 112px;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav {
+    position: relative !important;
+    z-index: 30;
+    min-height: max(76px, calc(env(safe-area-inset-bottom, 0px) + 68px));
+    margin-top: 0 !important;
+    margin-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .card-icons button,
+  .icon-button,
+  .text-button,
+  .section-row button,
+  .ghost-button,
+  .live-top-actions button,
+  .setup-exit-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .setup-toggle-row label,
+  .sound-pill {
+    min-height: 44px;
+    padding: 0 14px;
+  }
+
+  .setup-toggle-row input {
+    width: 18px;
+    height: 18px;
+  }
+
+  .distance-control-card label {
+    min-height: 44px;
+  }
+
+  .distance-control-card input[type="number"] {
+    min-width: 76px;
+    min-height: 44px;
+  }
+
+  .distance-control-card input[type="range"] {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 520px) {
+  .home-screen .topbar,
+  .simple-header,
+  .profile-hero,
+  .match-card-hero,
+  .friend-search-card,
+  .local-ladder-card,
+  .profile-section,
+  .info-card,
+  .recent-match-card,
+  .progress-card {
+    max-width: 100%;
+  }
+
+  .start-grid,
+  .highlight-grid,
+  .stats-grid,
+  .skill-row,
+  .equipment-row,
+  .friend-card,
+  .nearby-card {
+    min-width: 0;
+  }
+
+  .friend-card,
+  .nearby-card,
+  .match-summary-card,
+  .info-card {
+    overflow: hidden;
+  }
+
+  .friend-card *,
+  .nearby-card *,
+  .match-summary-card *,
+  .info-card * {
+    min-width: 0;
+  }
+
+  .highlights-screen .match-card-hero {
+    gap: 10px !important;
+    padding: 16px !important;
+  }
+
+  .highlights-screen .match-card-hero-preview {
+    min-height: 72px !important;
+    padding: 10px !important;
+  }
+
+  .highlights-screen .match-card-hero-preview .portrait {
+    width: 44px !important;
+    height: 44px !important;
+  }
+
+  .highlights-screen .match-card-hero-button {
+    min-height: 48px !important;
+  }
+
+  .highlights-screen .match-card-hero-copy {
+    gap: 6px !important;
+  }
+
+  .highlights-screen .filter-row {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    min-height: 52px !important;
+    padding-bottom: 4px;
+    scroll-padding-inline: 20px;
+  }
+
+  .highlights-screen .filter-row button {
+    flex: 0 0 auto !important;
+    min-width: 108px !important;
+  }
+
+  .highlights-screen .highlight-grid > .empty-state {
+    min-height: 104px !important;
+    padding: 12px !important;
+    gap: 6px !important;
+  }
+
+  .highlights-screen .highlight-grid > .empty-state > span {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .highlights-screen .highlight-grid > .empty-state p {
+    font-size: 0.9rem !important;
+    line-height: 1.28 !important;
+  }
+}
+
+@media (max-width: 1023px) and (orientation: landscape) {
+  .phone-frame:not(.is-live):not(.auth-frame) .screen.content {
+    padding-top: max(18px, env(safe-area-inset-top, 0px)) !important;
+    padding-bottom: max(22px, env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav {
+    min-height: max(66px, calc(env(safe-area-inset-bottom, 0px) + 60px));
+  }
+
+  .screen.content:not(.live-screen) {
+    gap: clamp(14px, 3vh, 20px) !important;
+  }
+
+  .simple-header h1,
+  .home-screen .topbar h1 {
+    font-size: clamp(2.25rem, 10vh, 3rem) !important;
+    line-height: 1.03 !important;
+    max-width: 18ch !important;
+  }
+
+  .simple-header {
+    gap: 8px !important;
+  }
+
+  .tabs {
+    height: auto !important;
+    min-height: 56px !important;
+    overflow: visible !important;
+  }
+
+  .tabs button {
+    min-height: 44px !important;
+  }
+}
+
+@media (min-width: 700px) and (orientation: landscape) {
+  .phone-frame.is-live .match-setup-screen {
+    display: grid !important;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    align-content: start !important;
+    grid-auto-rows: max-content;
+    grid-template-columns: minmax(260px, 0.95fr) minmax(300px, 1.05fr) !important;
+    gap: clamp(8px, 1.8vh, 14px) clamp(16px, 3vw, 32px) !important;
+    padding: max(10px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px)) !important;
+  }
+
+  .phone-frame.is-live .match-setup-hero {
+    grid-column: 1;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .phone-frame.is-live .match-setup-hero h1 {
+    font-size: clamp(2rem, 9vh, 3.1rem);
+    line-height: 1.02;
+  }
+
+  .phone-frame.is-live .setup-name-grid {
+    grid-column: 1;
+    gap: 8px clamp(48px, 7vw, 78px) !important;
+  }
+
+  .phone-frame.is-live .setup-name-grid.singles {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  }
+
+  .phone-frame.is-live .setup-name-card {
+    min-height: 68px !important;
+    padding: 12px 14px !important;
+  }
+
+  .phone-frame.is-live .setup-name-card input {
+    min-height: 34px !important;
+    font-size: clamp(1rem, 3.8vh, 1.2rem) !important;
+  }
+
+  .phone-frame.is-live .swap-sides-button {
+    width: 50px !important;
+    height: 50px !important;
+  }
+
+  .phone-frame.is-live .setup-toggle-row {
+    grid-column: 1;
+    gap: 8px !important;
+    margin: 0 !important;
+  }
+
+  .phone-frame.is-live .setup-choice-section {
+    grid-column: 2;
+    gap: 10px !important;
+    margin: 0 !important;
+  }
+
+  .phone-frame.is-live .setup-choice-section h2 {
+    font-size: clamp(1.1rem, 4vh, 1.45rem);
+  }
+
+  .phone-frame.is-live .choice-card,
+  .phone-frame.is-live .scoring-control-card {
+    min-height: 70px !important;
+    padding: 12px 14px !important;
+  }
+
+  .phone-frame.is-live .match-start-button {
+    grid-column: 2;
+    min-height: 58px !important;
+    margin: 0 !important;
+    align-self: end;
+  }
+
+  .phone-frame.is-live .live-screen {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden !important;
+    align-content: stretch !important;
+    grid-template-columns: minmax(0, 1fr) clamp(260px, 34vw, 370px) !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    gap: 8px clamp(10px, 1.8vw, 18px) !important;
+    padding: max(8px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px)) !important;
+  }
+
+  .phone-frame.is-live .live-command-bar {
+    grid-column: 1 / -1 !important;
+    grid-row: 1 !important;
+    min-height: 44px;
+    margin: 0 !important;
+  }
+
+  .phone-frame.is-live .live-top-actions {
+    align-items: center;
+    gap: 8px;
+  }
+
+  .phone-frame.is-live .live-top-actions button {
+    min-height: 44px !important;
+    padding: 0 16px !important;
+  }
+
+  .phone-frame.is-live .live-score-stage {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+  }
+
+  .phone-frame.is-live .live-screen > .set-table,
+  .phone-frame.is-live .watch-remote-card,
+  .phone-frame.is-live .voice-assist-panel:not(.needs-choice),
+  .phone-frame.is-live .voice-command-panel {
+    display: none !important;
+  }
+
+  .phone-frame.is-live .live-remote-row {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    align-self: start !important;
+    min-height: 44px;
+    margin: 0 !important;
+  }
+
+  .phone-frame.is-live .voice-assist-panel.needs-choice {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    align-self: start !important;
+    margin-top: 52px !important;
+    max-height: calc(100dvh - 132px);
+    overflow-y: auto;
+  }
+
+  .phone-frame.is-live .live-screen .point-actions {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    align-self: end !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    height: auto !important;
+    max-height: calc(100dvh - 72px) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .phone-frame.is-live .live-screen .match-action.primary,
+  .phone-frame.is-live .live-screen .match-action.opponent {
+    grid-column: span 1 !important;
+    min-height: clamp(72px, 19vh, 98px) !important;
+  }
+
+  .phone-frame.is-live .live-screen .match-action {
+    min-width: 0;
+    min-height: clamp(52px, 12vh, 68px) !important;
+    border-radius: 18px !important;
+    padding: 10px !important;
+  }
+
+  .phone-frame.is-live .live-screen .match-action span {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (min-width: 700px) and (orientation: landscape) and (max-height: 430px) {
+  .phone-frame.is-live .match-setup-screen {
+    grid-template-columns: minmax(250px, 0.92fr) minmax(290px, 1.08fr) !important;
+    gap: 7px 18px !important;
+    padding-top: max(7px, env(safe-area-inset-top, 0px)) !important;
+    padding-bottom: max(7px, env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .phone-frame.is-live .match-setup-hero h1 {
+    font-size: clamp(1.75rem, 8.2vh, 2.55rem);
+  }
+
+  .phone-frame.is-live .setup-name-card {
+    min-height: 58px !important;
+    padding: 10px 12px !important;
+  }
+
+  .phone-frame.is-live .choice-card,
+  .phone-frame.is-live .scoring-control-card {
+    min-height: 54px !important;
+    padding: 10px 12px !important;
+  }
+
+  .phone-frame.is-live .match-start-button {
+    min-height: 50px !important;
+  }
+
+  .phone-frame.is-live .live-screen {
+    grid-template-columns: minmax(0, 1fr) clamp(240px, 33vw, 330px) !important;
+    gap: 7px 10px !important;
+  }
+
+  .phone-frame.is-live .live-remote-row {
+    display: none !important;
+  }
+
+  .phone-frame.is-live .voice-assist-panel.needs-choice {
+    margin-top: 0 !important;
+  }
+
+  .phone-frame.is-live .live-screen .point-actions {
+    max-height: calc(100dvh - 62px) !important;
+  }
+
+  .phone-frame.is-live .live-screen .match-action.primary,
+  .phone-frame.is-live .live-screen .match-action.opponent {
+    min-height: 64px !important;
+  }
+
+  .phone-frame.is-live .live-screen .match-action {
+    min-height: 48px !important;
+    padding: 8px !important;
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-shell:not(.is-live-shell) {
+    align-items: stretch;
+    justify-content: center;
+    padding: 22px;
+  }
+
+  .app-shell:not(.is-live-shell) > .phone-frame:not(.is-live):not(.auth-frame) {
+    width: min(100%, 1500px);
+    min-height: calc(100dvh - 44px);
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen.content {
+    padding-left: clamp(150px, 11vw, 188px) !important;
+    padding-right: clamp(40px, 5vw, 74px) !important;
+    padding-bottom: 64px !important;
+  }
+
+  .home-screen,
+  .highlights-screen,
+  .social-screen,
+  .profile-screen,
+  .admin-screen {
+    grid-template-columns: minmax(360px, 0.82fr) minmax(620px, 1.18fr) !important;
+    gap: clamp(28px, 4vw, 58px) !important;
+  }
+
+  .home-screen .topbar,
+  .simple-header,
+  .profile-hero,
+  .profile-section,
+  .match-card-hero,
+  .friend-search-card,
+  .recent-match-card,
+  .progress-card,
+  .info-card {
+    width: 100%;
+    max-width: none;
+  }
+}

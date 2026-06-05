@@ -25,7 +25,9 @@ export async function saveMatchRecords(records: MatchRecord[]) {
       await batch.commit();
       return { mode: "firebase" as const, savedUserIds: cleanRecords.map((record) => record.userId) };
     } catch (error) {
-      console.warn("Firebase save failed, falling back to local storage.", error);
+      console.warn("Firebase match save failed.", error);
+      const detail = error instanceof Error ? error.message : String(error ?? "");
+      throw new Error(detail ? `Firebase match save failed: ${detail}` : "Firebase match save failed.");
     }
   }
 

@@ -1038,7 +1038,15 @@ export default function App() {
     ];
     const record = createMatchRecord(match, appUser.id, elapsedMatchTime, matchStats, feedback, opponentFeedback, sideUserIds);
     const sharedRecords = createSharedMatchRecords(record, appUser.id);
-    const result = await saveMatchRecords(sharedRecords);
+    let result: Awaited<ReturnType<typeof saveMatchRecords>>;
+    try {
+      result = await saveMatchRecords(sharedRecords);
+    } catch (error) {
+      console.warn("Could not save match records.", error);
+      setSaveStatus(getMatchSaveErrorMessage(error));
+      setMatchRecordsStatus("Match save failed");
+      return;
+    }
     const nextRecords = [record, ...matchRecords.filter((item) => item.id !== record.id)].slice(0, 25);
     setMatchRecords(nextRecords);
     const profileWithFeedback = applySkillFeedback(profile, skillFeedback);
@@ -5060,6 +5068,17 @@ function getMatchRecordsErrorMessage(error: unknown) {
     return "Saved matches need Firebase permission. Sign out, sign in, and try again.";
   }
   return detail || "Could not load saved matches.";
+}
+
+function getMatchSaveErrorMessage(error: unknown) {
+  const detail = error instanceof Error ? error.message : String(error ?? "");
+  if (detail.includes("permission-denied") || detail.includes("Missing or insufficient permissions")) {
+    return "Match was not saved. Firebase blocked the sync. Sign out, sign in, and try again.";
+  }
+  if (detail.toLowerCase().includes("network") || detail.includes("unavailable")) {
+    return "Match was not saved. Check your internet connection and try again.";
+  }
+  return detail ? `Match was not saved. ${detail}` : "Match was not saved. Try again.";
 }
 
 function getSocialErrorMessage(error: unknown) {
