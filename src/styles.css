@@ -12471,3 +12471,240 @@ body,
     max-width: none;
   }
 }
+
+/* Desktop web contract: sidebar and content are separate columns, never overlapping. */
+@media (min-width: 1024px) {
+  .app-shell:not(.is-live-shell) {
+    min-height: 100dvh !important;
+    display: grid !important;
+    place-items: stretch !important;
+    padding: 0 !important;
+    background:
+      radial-gradient(circle at 8% 8%, rgba(205, 234, 95, 0.16), transparent 30%),
+      radial-gradient(circle at 95% 0%, rgba(232, 246, 223, 0.62), transparent 28%),
+      linear-gradient(135deg, #edf3e7 0%, #fbfdf5 100%) !important;
+  }
+
+  .app-shell:not(.is-live-shell) > .phone-frame:not(.is-live):not(.auth-frame) {
+    display: grid !important;
+    grid-template-columns: clamp(122px, 9vw, 148px) minmax(0, 1fr) !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: hidden !important;
+    border-radius: 0 !important;
+    background:
+      radial-gradient(circle at 22% 10%, rgba(205, 234, 95, 0.1), transparent 22%),
+      linear-gradient(180deg, rgba(255, 254, 248, 0.98), rgba(249, 252, 241, 0.98)) !important;
+    box-shadow: none !important;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .court-lines {
+    grid-column: 2 !important;
+    inset: 44px 48px 44px 48px !important;
+    height: auto !important;
+    opacity: 0.36 !important;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .screen.content {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    width: 100% !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    min-height: 0 !important;
+    padding: clamp(38px, 5vw, 72px) clamp(42px, 5vw, 86px) 72px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    scrollbar-gutter: stable !important;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
+    height: 100dvh !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    grid-auto-rows: minmax(58px, max-content) !important;
+    align-content: start !important;
+    gap: 8px !important;
+    margin: 0 !important;
+    padding: 34px 16px !important;
+    border-radius: 0 !important;
+    background: rgba(255, 255, 255, 0.78) !important;
+    box-shadow: inset -1px 0 0 rgba(38, 54, 31, 0.08) !important;
+    backdrop-filter: blur(18px) !important;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav::before {
+    content: "AceTrack";
+    display: grid !important;
+    place-items: center start !important;
+    min-height: 62px !important;
+    padding-left: 10px !important;
+    color: #1f2c12 !important;
+    font-size: 0.88rem !important;
+    font-weight: 950 !important;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 58px !important;
+    display: grid !important;
+    grid-template-columns: 24px minmax(0, 1fr) !important;
+    place-items: center start !important;
+    justify-items: start !important;
+    gap: 10px !important;
+    padding: 0 14px !important;
+    border-radius: 18px !important;
+    text-align: left !important;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav svg {
+    width: 20px !important;
+    height: 20px !important;
+  }
+
+  .phone-frame:not(.is-live):not(.auth-frame) .bottom-nav span {
+    font-size: 0.82rem !important;
+    white-space: nowrap !important;
+  }
+
+  .home-screen,
+  .highlights-screen,
+  .social-screen,
+  .profile-screen,
+  .account-screen,
+  .admin-screen,
+  .complete-screen {
+    display: grid !important;
+    grid-template-columns: minmax(300px, 0.68fr) minmax(520px, 1.32fr) !important;
+    align-content: start !important;
+    align-items: start !important;
+    gap: clamp(24px, 3.2vw, 48px) clamp(34px, 4.5vw, 72px) !important;
+  }
+
+  .home-screen .topbar,
+  .profile-screen .profile-hero,
+  .social-screen .simple-header,
+  .highlights-screen .simple-header,
+  .account-screen .simple-header,
+  .admin-screen .admin-header,
+  .complete-screen .celebration {
+    position: static !important;
+    top: auto !important;
+    z-index: auto !important;
+    padding-top: 0 !important;
+    background: transparent !important;
+  }
+
+  .home-screen h1,
+  .simple-header h1,
+  .complete-screen .celebration h1 {
+    max-width: 13ch !important;
+    font-size: clamp(3rem, 4.15vw, 5rem) !important;
+    line-height: 1.02 !important;
+  }
+
+  .social-screen .simple-header {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+
+  .social-screen .tabs {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    align-self: start !important;
+    height: auto !important;
+    min-height: 58px !important;
+    margin: 0 !important;
+    overflow: visible !important;
+  }
+
+  .social-screen .friend-search-card {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    align-self: start !important;
+  }
+
+  .social-screen .distance-control-card,
+  .social-screen .gps-card,
+  .social-screen .tennis-court-card,
+  .social-screen .player-list,
+  .social-screen .request-list {
+    grid-column: 2 !important;
+    align-self: start !important;
+  }
+
+  .social-screen .list-label {
+    grid-column: 2 !important;
+  }
+
+  .social-screen .ladder-card {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+  }
+
+  .social-screen .request-list {
+    gap: 14px !important;
+    padding-bottom: 0 !important;
+  }
+
+  .social-screen .request-row,
+  .social-screen .friend-search-result {
+    grid-template-columns: 58px minmax(0, 1fr) minmax(230px, 0.62fr) !important;
+    gap: 14px !important;
+  }
+
+  .social-screen .request-actions,
+  .social-screen .friend-search-result .request-actions {
+    grid-template-columns: repeat(2, minmax(104px, 1fr)) !important;
+  }
+
+  .social-screen .request-actions button,
+  .social-screen .request-actions .ghost-button,
+  .social-screen .friend-search-result .request-actions button {
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+  }
+
+  .admin-screen .admin-layout {
+    grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr) !important;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1180px) {
+  .home-screen,
+  .highlights-screen,
+  .social-screen,
+  .profile-screen,
+  .account-screen,
+  .admin-screen,
+  .complete-screen {
+    grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1.22fr) !important;
+    column-gap: 34px !important;
+  }
+
+  .social-screen .request-row,
+  .social-screen .friend-search-result {
+    grid-template-columns: 54px minmax(0, 1fr) !important;
+  }
+
+  .social-screen .request-actions,
+  .social-screen .friend-search-result .request-actions {
+    grid-column: 1 / -1 !important;
+  }
+}
