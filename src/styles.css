@@ -10435,3 +10435,465 @@ body,
     padding: 12px;
   }
 }
+
+/* Match control polish: setup is clear, live scoring is tripod-first, and remote fits watch-size screens. */
+.scoring-control-section {
+  text-align: left;
+}
+
+.scoring-control-section h2 {
+  text-align: center;
+}
+
+.scoring-control-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.scoring-control-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 10px 12px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-soft), inset 0 0 0 1px rgba(38, 54, 31, 0.06);
+}
+
+.scoring-control-card > span {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  grid-row: span 2;
+  border-radius: 50%;
+  background: #eef8c7;
+  color: var(--accent-strong);
+}
+
+.scoring-control-card strong,
+.scoring-control-card p {
+  min-width: 0;
+  margin: 0;
+}
+
+.scoring-control-card strong {
+  color: var(--ink);
+  font-size: 0.98rem;
+  line-height: 1.2;
+}
+
+.scoring-control-card p {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.38;
+}
+
+.watch-remote-card {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: var(--shadow-soft), inset 0 0 0 1px rgba(38, 54, 31, 0.06);
+}
+
+.watch-remote-card > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.watch-remote-card .eyebrow,
+.watch-remote-card strong,
+.watch-remote-card span {
+  min-width: 0;
+  margin: 0;
+}
+
+.watch-remote-card .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.watch-remote-card strong {
+  color: var(--ink);
+  font-size: 0.98rem;
+  line-height: 1.22;
+}
+
+.watch-remote-card span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.watch-remote-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.watch-remote-actions .ghost-button,
+.watch-remote-actions .hero-action {
+  min-height: 44px;
+  justify-content: center;
+  padding-inline: 12px;
+  text-decoration: none;
+}
+
+.setup-exit-button,
+.sound-pill {
+  min-height: 44px;
+}
+
+.live-top-actions button {
+  min-height: 44px;
+}
+
+.phone-frame.is-live .voice-example-row,
+.phone-frame.is-live .voice-choice-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: visible;
+}
+
+.phone-frame.is-live .voice-example-row button,
+.phone-frame.is-live .voice-choice-row button,
+.phone-frame.is-live .voice-command-panel button {
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ghost-button.disabled,
+.watch-remote-actions button:disabled {
+  opacity: 0.48;
+  pointer-events: none;
+}
+
+.phone-frame.is-live .live-screen {
+  display: grid;
+  grid-template-rows: auto minmax(205px, 1fr) auto auto auto auto;
+  gap: clamp(10px, 1.8vh, 14px);
+  align-content: start;
+}
+
+.phone-frame.is-live .watch-remote-card {
+  display: grid;
+}
+
+.phone-frame.is-live .live-score-stage {
+  min-height: clamp(205px, 33vh, 320px);
+}
+
+.phone-frame.is-live .live-screen .point-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.phone-frame.is-live .live-screen .match-action {
+  min-width: 0;
+}
+
+@media (max-width: 430px) {
+  .scoring-control-card {
+    padding: 12px;
+  }
+
+  .watch-remote-card {
+    padding: 12px;
+  }
+
+  .phone-frame.is-live .live-screen {
+    grid-template-rows: auto minmax(185px, 1fr) auto auto auto auto;
+  }
+
+  .phone-frame.is-live .live-score-stage {
+    min-height: clamp(185px, 30vh, 260px);
+  }
+
+  .watch-remote-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 720px) and (orientation: landscape) {
+  .phone-frame.is-live .live-screen {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, min(38vw, 430px));
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+    overflow: hidden;
+  }
+
+  .phone-frame.is-live .live-command-bar {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .phone-frame.is-live .live-score-stage {
+    grid-column: 1;
+    grid-row: 2 / 7;
+    min-height: 0;
+  }
+
+  .phone-frame.is-live .live-screen > .set-table {
+    display: grid;
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .phone-frame.is-live .live-remote-row {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  .phone-frame.is-live .watch-remote-card {
+    grid-column: 2;
+    grid-row: 4;
+  }
+
+  .phone-frame.is-live .voice-assist-panel {
+    grid-column: 2;
+    grid-row: 5;
+  }
+
+  .phone-frame.is-live .voice-command-panel {
+    display: none;
+  }
+
+  .phone-frame.is-live .live-screen .point-actions {
+    grid-column: 2;
+    grid-row: 6;
+    align-self: end;
+  }
+}
+
+@media (min-width: 720px) and (orientation: landscape) and (max-height: 500px) {
+  .phone-frame.is-live .live-screen {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+    grid-template-rows: auto 68px 40px 76px 48px auto;
+    gap: 8px;
+    padding: 10px 14px;
+  }
+
+  .phone-frame.is-live .live-score-stage {
+    grid-row: 2 / 7;
+  }
+
+  .phone-frame.is-live .watch-remote-card {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+
+  .phone-frame.is-live .watch-remote-card strong,
+  .phone-frame.is-live .watch-remote-card span {
+    font-size: 0.74rem;
+  }
+
+  .phone-frame.is-live .watch-remote-card .eyebrow {
+    display: none;
+  }
+
+  .phone-frame.is-live .watch-remote-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .phone-frame.is-live .watch-remote-actions .ghost-button,
+  .phone-frame.is-live .watch-remote-actions .hero-action {
+    min-height: 34px;
+    font-size: 0.72rem;
+  }
+}
+
+.watch-remote-shell {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: clamp(8px, 4vw, 24px);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(205, 234, 95, 0.2), transparent 28%),
+    linear-gradient(135deg, #edf4e6 0%, #fffef8 100%);
+}
+
+.watch-remote-screen {
+  width: min(100%, 430px);
+  min-height: min(100svh - 16px, 760px);
+  display: grid;
+  align-content: center;
+  gap: clamp(14px, 4vw, 22px);
+  padding: clamp(16px, 5vw, 32px);
+  border-radius: clamp(24px, 8vw, 42px);
+  background: rgba(255, 254, 248, 0.94);
+  box-shadow: 0 24px 80px rgba(70, 83, 55, 0.18), inset 0 0 0 1px rgba(38, 54, 31, 0.06);
+}
+
+.watch-remote-screen .wordmark {
+  justify-self: center;
+}
+
+.watch-remote-head {
+  display: grid;
+  gap: 6px;
+  text-align: center;
+}
+
+.watch-remote-head h1,
+.watch-remote-head p,
+.watch-remote-head span {
+  margin: 0;
+}
+
+.watch-remote-head h1 {
+  color: var(--ink);
+  font-size: clamp(2rem, 13vw, 4rem);
+  line-height: 0.95;
+}
+
+.watch-remote-head span {
+  color: var(--muted);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.watch-score-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.watch-score-buttons button,
+.watch-utility-row button {
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  box-shadow: var(--shadow-soft), inset 0 0 0 1px rgba(38, 54, 31, 0.06);
+}
+
+.watch-score-buttons button {
+  min-height: clamp(112px, 26svh, 172px);
+  padding: 16px 10px;
+}
+
+.watch-score-buttons button.accent {
+  background: linear-gradient(180deg, #e8fb89, #cdea5f);
+}
+
+.watch-score-buttons span,
+.watch-score-buttons strong {
+  min-width: 0;
+  max-width: 100%;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.watch-score-buttons span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.watch-score-buttons strong {
+  color: var(--ink);
+  font-size: clamp(1rem, 5vw, 1.5rem);
+  line-height: 1.05;
+}
+
+.watch-utility-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.watch-utility-row button {
+  min-height: 56px;
+  grid-template-columns: auto auto;
+  align-content: center;
+  justify-content: center;
+  padding: 0 14px;
+  font-weight: 900;
+}
+
+.watch-utility-row button.danger {
+  color: #8d2a1f;
+  background: rgba(255, 246, 240, 0.92);
+}
+
+.watch-remote-status {
+  min-height: 22px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 260px), (max-height: 360px) {
+  .watch-remote-shell {
+    padding: 0;
+  }
+
+  .watch-remote-screen {
+    min-height: 100svh;
+    border-radius: 0;
+    gap: 9px;
+    padding: 12px;
+  }
+
+  .watch-remote-screen .wordmark strong {
+    font-size: 1rem;
+  }
+
+  .watch-remote-screen .wordmark > span {
+    width: 30px;
+    height: 30px;
+  }
+
+  .watch-remote-screen .wordmark .tennis-ball {
+    width: 18px;
+    height: 18px;
+  }
+
+  .watch-remote-head h1 {
+    font-size: 1.7rem;
+  }
+
+  .watch-score-buttons {
+    gap: 7px;
+  }
+
+  .watch-score-buttons button {
+    min-height: 82px;
+    border-radius: 20px;
+    padding: 10px 6px;
+  }
+
+  .watch-score-buttons span {
+    font-size: 0.64rem;
+  }
+
+  .watch-score-buttons strong {
+    font-size: 0.88rem;
+  }
+
+  .watch-utility-row {
+    gap: 7px;
+  }
+
+  .watch-utility-row button {
+    min-height: 44px;
+    border-radius: 18px;
+    font-size: 0.78rem;
+  }
+}

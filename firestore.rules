@@ -66,5 +66,22 @@ service cloud.firestore {
       allow create: if isSocialSender(request.resource.data)
         && isParticipant(request.resource.data);
     }
+
+    match /matchRemotes/{sessionId} {
+      allow read, update, delete: if isOwner(resource.data.ownerUserId) || isAdmin();
+      allow create: if isOwner(request.resource.data.ownerUserId);
+
+      match /commands/{commandId} {
+        function remoteSession() {
+          return get(/databases/$(database)/documents/matchRemotes/$(sessionId)).data;
+        }
+
+        allow create: if request.resource.data.sessionId == sessionId
+          && request.resource.data.token == remoteSession().token
+          && request.resource.data.type in ["aceA", "aceB", "end", "pointA", "pointB", "undo"];
+        allow read, update, delete: if isAdmin()
+          || (request.auth != null && remoteSession().ownerUserId == request.auth.uid);
+      }
+    }
   }
 }

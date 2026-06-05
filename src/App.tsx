@@ -57,6 +57,15 @@ import {
   type AppUser
 } from "./backend/authRepository";
 import { getBackendMode, listUserMatchRecords, saveMatchRecord } from "./backend/matchRepository";
+import {
+  createMatchRemoteSession,
+  markMatchRemoteCommandHandled,
+  sendMatchRemoteCommand,
+  subscribeToMatchRemoteCommands,
+  type MatchRemoteCommand,
+  type MatchRemoteCommandType,
+  type MatchRemoteSession
+} from "./backend/matchRemoteRepository";
 import { listPlayerLocations, savePlayerLocation, toNearbyPlayers } from "./backend/nearbyRepository";
 import { createManagedUserProfile, deleteUserProfile, listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
 import {
@@ -104,7 +113,7 @@ type PointTag = {
   winnerPlayer?: 0 | 1;
   errorPlayer?: 0 | 1;
   shot?: string;
-  source?: "tap" | "voice";
+  source?: "remote" | "tap" | "voice";
 };
 type VoicePrompt = {
   action: "point" | "ace" | "winner" | "error";
@@ -134,6 +143,11 @@ type MatchOptions = {
   sideB: [string, string];
   singles: boolean;
   soundEnabled: boolean;
+};
+type RemoteRouteParams = {
+  players: [string, string];
+  sessionId: string;
+  token: string;
 };
 
 const ADMIN_EMAIL = "gorodscyflavio@gmail.com";
@@ -211,7 +225,11 @@ export default function App() {
   const [isVoiceListening, setIsVoiceListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("Voice ready");
   const [voicePrompt, setVoicePrompt] = useState<VoicePrompt | undefined>();
+  const [remoteSession, setRemoteSession] = usePersistentState<MatchRemoteSession | undefined>("acetrack:match-remote-session", undefined);
+  const [remoteStatus, setRemoteStatus] = useState("Watch remote starts after the match begins.");
+  const remoteParams = useMemo(() => getRemoteRouteParams(), []);
   const hydratedUserRef = useRef<string | undefined>(undefined);
+  const handledRemoteCommandIdsRef = useRef(new Set<string>());
   const matchRef = useRef(match);
   const matchOptionsRef = useRef(matchOptions);
   const pendingAceRef = useRef(pendingAce);
@@ -266,6 +284,42 @@ export default function App() {
   useEffect(() => {
     voicePromptRef.current = voicePrompt;
   }, [voicePrompt]);
+
+  useEffect(() => {
+    if (!remoteSession || screen !== "live" || matchMode !== "playing") return;
+
+    let isActive = true;
+    let unsubscribe = () => {};
+    setRemoteStatus("Connecting watch remote...");
+
+    subscribeToMatchRemoteCommands(remoteSession.id, async (command) => {
+      if (!isActive || command.handled || command.token !== remoteSession.token || handledRemoteCommandIdsRef.current.has(command.id)) return;
+
+      handledRemoteCommandIdsRef.current.add(command.id);
+      handleRemoteCommand(command);
+      await markMatchRemoteCommandHandled(remoteSession.id, command.id).catch((error) => {
+        console.warn("Could not mark watch command handled.", error);
+      });
+    })
+      .then((nextUnsubscribe) => {
+        if (!isActive) {
+          nextUnsubscribe();
+          return;
+        }
+
+        unsubscribe = nextUnsubscribe;
+        setRemoteStatus("Watch remote connected.");
+      })
+      .catch((error) => {
+        console.warn("Watch remote listener failed.", error);
+        setRemoteStatus(getRemoteErrorMessage(error));
+      });
+
+    return () => {
+      isActive = false;
+      unsubscribe();
+    };
+  }, [matchMode, remoteSession, screen]);
 
   useEffect(() => {
     let isMounted = true;
@@ -389,6 +443,12 @@ export default function App() {
   function showMessage(message: string) {
     setAppMessage(message);
     window.setTimeout(() => setAppMessage(""), 2400);
+  }
+
+  function resetRemoteScoring(status = "Watch remote starts after the match begins.") {
+    handledRemoteCommandIdsRef.current = new Set<string>();
+    setRemoteSession(undefined);
+    setRemoteStatus(status);
   }
 
   async function persistProfile(nextProfile: UserProfile, message = "Profile saved") {
@@ -550,6 +610,46 @@ export default function App() {
     showMessage(`Error recorded for ${playerName}`);
   }
 
+  function handleRemoteCommand(command: MatchRemoteCommand) {
+    const activePlayers = matchRef.current.players;
+
+    if (command.type === "pointA") {
+      addPoint(0, { source: "remote" });
+      setVoiceStatus(`Watch: point ${activePlayers[0]}`);
+      return;
+    }
+
+    if (command.type === "pointB") {
+      addPoint(1, { source: "remote" });
+      setVoiceStatus(`Watch: point ${activePlayers[1]}`);
+      return;
+    }
+
+    if (command.type === "aceA") {
+      addPoint(0, { acePlayer: 0, shot: "Ace", source: "remote" });
+      setVoiceStatus(`Watch: ace ${activePlayers[0]}`);
+      showMessage(`Ace recorded for ${activePlayers[0]}`);
+      return;
+    }
+
+    if (command.type === "aceB") {
+      addPoint(1, { acePlayer: 1, shot: "Ace", source: "remote" });
+      setVoiceStatus(`Watch: ace ${activePlayers[1]}`);
+      showMessage(`Ace recorded for ${activePlayers[1]}`);
+      return;
+    }
+
+    if (command.type === "undo") {
+      undoMatchAction();
+      setVoiceStatus("Watch: undo");
+      return;
+    }
+
+    playUiSound("end", matchOptionsRef.current.soundEnabled);
+    setVoiceStatus("Watch: match ended");
+    setScreen("complete");
+  }
+
   function promptForVoicePlayer(prompt: VoicePrompt) {
     setVoicePrompt(prompt);
     voicePromptRef.current = prompt;
@@ -625,6 +725,7 @@ export default function App() {
   function startNewMatch() {
     setMatchMode("setup");
     setSaveStatus("");
+    resetRemoteScoring();
     pointTagsRef.current = [];
     setPointTags([]);
     clearPendingScoringTags();
@@ -642,6 +743,7 @@ export default function App() {
     setMatchOptions(nextOptions);
     setMatchMode("setup");
     setSaveStatus("");
+    resetRemoteScoring();
     pointTagsRef.current = [];
     setPointTags([]);
     clearPendingScoringTags();
@@ -669,6 +771,7 @@ export default function App() {
     const normalizedOptions = normalizeMatchOptions(options, profile.name);
     const nextMatch = createMatch(getMatchSideNames(normalizedOptions));
     nextMatch.server = getInitialServerSide(normalizedOptions);
+    resetRemoteScoring("Creating watch remote...");
     matchRef.current = nextMatch;
     matchOptionsRef.current = normalizedOptions;
     setMatchOptions(normalizedOptions);
@@ -685,6 +788,54 @@ export default function App() {
     setScreen("live");
     playUiSound("start", normalizedOptions.soundEnabled);
     showMessage("Match started");
+    createRemoteSessionForMatch(nextMatch);
+  }
+
+  async function createRemoteSessionForMatch(nextMatch: MatchState) {
+    try {
+      const activeUser = appUser ?? await getCurrentAppUser();
+      setAppUser(activeUser);
+      if (activeUser.mode !== "firebase") {
+        setRemoteStatus("Watch remote needs a Firebase sign-in so your watch can talk to this phone.");
+        return;
+      }
+
+      const session = await createMatchRemoteSession(activeUser.id, nextMatch.players);
+      if (!session) {
+        setRemoteStatus("Watch remote needs Firebase.");
+        return;
+      }
+
+      setRemoteSession(session);
+      setRemoteStatus("Watch remote ready. Open or share it to Apple Watch.");
+    } catch (error) {
+      console.warn("Could not create watch remote.", error);
+      setRemoteStatus(getRemoteErrorMessage(error));
+    }
+  }
+
+  async function shareRemoteLink() {
+    if (!remoteSession) {
+      showMessage("Start the match first to create the watch remote");
+      return;
+    }
+
+    const url = getRemoteScoringUrl(remoteSession);
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "AceTrack Watch Remote",
+          text: "Open this on Apple Watch to score the match from your wrist.",
+          url
+        });
+      } else {
+        await navigator.clipboard.writeText(url);
+        showMessage("Watch remote link copied");
+      }
+    } catch (error) {
+      console.warn("Could not share watch remote.", error);
+      showMessage("Watch remote link ready");
+    }
   }
 
   function toggleSound() {
@@ -965,6 +1116,10 @@ export default function App() {
     showMessage("Signed out");
   }
 
+  if (remoteParams) {
+    return <RemoteScoringScreen params={remoteParams} />;
+  }
+
   if (authPhase === "loading") {
     return (
       <main className="app-shell">
@@ -1035,6 +1190,8 @@ export default function App() {
             pendingShotTag={pendingShotTag}
             pointDisplay={pointDisplay}
             profile={displayProfile}
+            remoteStatus={remoteStatus}
+            remoteUrl={remoteSession ? getRemoteScoringUrl(remoteSession) : ""}
             server={match.server}
             sets={sets}
             elapsedTime={elapsedMatchTime}
@@ -1050,6 +1207,7 @@ export default function App() {
             }}
             onExit={() => setScreen("home")}
             onNewMatch={startNewMatch}
+            onShareRemote={shareRemoteLink}
             onVoiceCommand={handleVoiceCommand}
             onVoicePromptSelection={handleVoicePromptSelection}
             onVoiceToggle={toggleVoiceCommands}
@@ -1248,6 +1406,62 @@ function SplashScreen() {
   );
 }
 
+function RemoteScoringScreen({ params }: { params: RemoteRouteParams }) {
+  const [status, setStatus] = useState("Remote ready");
+  const compactNames = params.players.map(getCompactSideName) as [string, string];
+
+  async function sendRemote(type: MatchRemoteCommandType, label: string) {
+    setStatus(`Sending ${label}...`);
+    try {
+      await sendMatchRemoteCommand(params.sessionId, params.token, type);
+      setStatus(`${label} sent`);
+      playUiSound(type === "undo" ? "undo" : type === "end" ? "end" : "point", true);
+    } catch (error) {
+      setStatus(getRemoteErrorMessage(error));
+    }
+  }
+
+  return (
+    <main className="watch-remote-shell">
+      <section className="watch-remote-screen">
+        <AceTrackWordmark />
+        <div className="watch-remote-head">
+          <p className="eyebrow"><span className="status-dot" /> Watch remote</p>
+          <h1>Score match</h1>
+          <span>{compactNames[0]} vs {compactNames[1]}</span>
+        </div>
+        <div className="watch-score-buttons">
+          <button onClick={() => sendRemote("pointA", `Point ${compactNames[0]}`)}>
+            <Plus size={22} />
+            <span>Point</span>
+            <strong>{compactNames[0]}</strong>
+          </button>
+          <button onClick={() => sendRemote("pointB", `Point ${compactNames[1]}`)}>
+            <Plus size={22} />
+            <span>Point</span>
+            <strong>{compactNames[1]}</strong>
+          </button>
+          <button className="accent" onClick={() => sendRemote("aceA", `Ace ${compactNames[0]}`)}>
+            <Zap size={21} />
+            <span>Ace + point</span>
+            <strong>{compactNames[0]}</strong>
+          </button>
+          <button className="accent" onClick={() => sendRemote("aceB", `Ace ${compactNames[1]}`)}>
+            <Zap size={21} />
+            <span>Ace + point</span>
+            <strong>{compactNames[1]}</strong>
+          </button>
+        </div>
+        <div className="watch-utility-row">
+          <button onClick={() => sendRemote("undo", "Undo")}><RotateCcw size={18} /> Undo</button>
+          <button className="danger" onClick={() => sendRemote("end", "End match")}><Trophy size={18} /> End</button>
+        </div>
+        <p className="watch-remote-status">{status}</p>
+      </section>
+    </main>
+  );
+}
+
 function MatchSetupScreen({
   options,
   profileName,
@@ -1329,14 +1543,24 @@ function MatchSetupScreen({
         </button>
       </div>
 
-      <section className="setup-choice-section">
-        <h2>Who keeps score?</h2>
-        <div className="choice-grid two">
-          {[0, 1].map((side) => (
-            <button className={currentOptions.scorer === side ? "choice-card active" : "choice-card"} key={side} onClick={() => onUpdate({ ...currentOptions, scorer: side as 0 | 1 })}>
-              {getSideDisplay(currentOptions, side as 0 | 1)}
-            </button>
-          ))}
+      <section className="setup-choice-section scoring-control-section">
+        <h2>Game controls</h2>
+        <div className="scoring-control-grid">
+          <article className="scoring-control-card">
+            <span><Radio size={18} /></span>
+            <strong>Tripod scoreboard</strong>
+            <p>Start the match and keep this phone visible from the court.</p>
+          </article>
+          <article className="scoring-control-card">
+            <span><Mic size={18} /></span>
+            <strong>Voice or touch</strong>
+            <p>Say “point player 1”, “ace player 2”, or tap the scoring buttons.</p>
+          </article>
+          <article className="scoring-control-card">
+            <span><Share2 size={18} /></span>
+            <strong>Apple Watch remote</strong>
+            <p>After Start Match, share the remote link and open it on your watch.</p>
+          </article>
         </div>
       </section>
 
@@ -1370,6 +1594,8 @@ function LiveMatchScreen({
   pendingShotTag,
   pointDisplay,
   profile,
+  remoteStatus,
+  remoteUrl,
   server,
   sets,
   elapsedTime,
@@ -1383,6 +1609,7 @@ function LiveMatchScreen({
   onEndMatch,
   onExit,
   onNewMatch,
+  onShareRemote,
   onVoiceCommand,
   onVoicePromptSelection,
   onVoiceToggle,
@@ -1396,6 +1623,8 @@ function LiveMatchScreen({
   pendingShotTag?: string;
   pointDisplay: [string, string];
   profile: UserProfile;
+  remoteStatus: string;
+  remoteUrl: string;
   server: 0 | 1;
   sets: ReturnType<typeof getCompletedSets>;
   elapsedTime: string;
@@ -1409,6 +1638,7 @@ function LiveMatchScreen({
   onEndMatch: () => void;
   onExit: () => void;
   onNewMatch: () => void;
+  onShareRemote: () => void;
   onVoiceCommand: (command: string) => void;
   onVoicePromptSelection: (player: 0 | 1) => void;
   onVoiceToggle: () => void;
@@ -1469,6 +1699,19 @@ function LiveMatchScreen({
         <span>{pendingAce !== undefined ? <Zap size={16} /> : <Radio size={16} />} {scoringStatus}</span>
         <strong><Clock3 size={16} /> {elapsedTime}</strong>
       </div>
+      <article className="watch-remote-card">
+        <div>
+          <p className="eyebrow"><Radio size={14} /> Watch remote</p>
+          <strong>Phone on tripod. Score from your wrist.</strong>
+          <span>{remoteStatus}</span>
+        </div>
+        <div className="watch-remote-actions">
+          <a className={remoteUrl ? "ghost-button" : "ghost-button disabled"} href={remoteUrl || undefined} rel="noreferrer" target="_blank">
+            <ArrowRight size={16} /> Open
+          </a>
+          <button className="hero-action compact" disabled={!remoteUrl} onClick={onShareRemote}><Share2 size={16} /> Share</button>
+        </div>
+      </article>
       <div className={voicePrompt ? "voice-assist-panel needs-choice" : "voice-assist-panel"}>
         <div className="voice-assist-copy">
           <span><Sparkles size={16} /></span>
@@ -3287,6 +3530,30 @@ function MenuIcon() {
   return <span className="menu-lines" aria-hidden="true"><i /><i /><i /></span>;
 }
 
+function getRemoteRouteParams(): RemoteRouteParams | undefined {
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get("remote");
+  const token = params.get("token");
+  if (!sessionId || !token) return undefined;
+
+  return {
+    players: [params.get("a") || "Player 1", params.get("b") || "Player 2"],
+    sessionId,
+    token
+  };
+}
+
+function getRemoteScoringUrl(session: MatchRemoteSession) {
+  const url = new URL(window.location.href);
+  url.hash = "";
+  url.search = "";
+  url.searchParams.set("remote", session.id);
+  url.searchParams.set("token", session.token);
+  url.searchParams.set("a", session.players[0]);
+  url.searchParams.set("b", session.players[1]);
+  return url.toString();
+}
+
 function normalizeMatchOptions(options: MatchOptions, fallbackName: string): MatchOptions {
   const normalized: MatchOptions = {
     ...defaultMatchOptions,
@@ -4147,6 +4414,17 @@ function getSocialErrorMessage(error: unknown) {
     return "Social permissions need the latest Firebase rules. Try again after the deploy finishes.";
   }
   return detail || "Could not load social activity.";
+}
+
+function getRemoteErrorMessage(error: unknown) {
+  const detail = error instanceof Error ? error.message : String(error ?? "");
+  if (detail.includes("permission-denied") || detail.includes("Missing or insufficient permissions")) {
+    return "Watch remote needs the latest Firebase rules. Deploy, reopen the match, and try again.";
+  }
+  if (detail.includes("unavailable") || detail.includes("network")) {
+    return "Watch remote needs internet on the phone and watch.";
+  }
+  return detail || "Watch remote is unavailable.";
 }
 
 function getAdminLoadErrorMessage(error: unknown) {
