@@ -15,6 +15,18 @@ describe("tennis scoring", () => {
     expect(getPointDisplay(match)).toEqual(["30", "15"]);
   });
 
+  it("preserves both scores when points alternate", () => {
+    let match = createMatch(["Flavio", "Tania"]);
+    match = scorePoint(match, 1);
+    expect(getPointDisplay(match)).toEqual(["0", "15"]);
+
+    match = scorePoint(match, 0);
+    expect(getPointDisplay(match)).toEqual(["15", "15"]);
+
+    match = scorePoint(match, 1);
+    expect(getPointDisplay(match)).toEqual(["15", "30"]);
+  });
+
   it("handles deuce and advantage", () => {
     let match = createMatch();
     [0, 0, 0, 1, 1, 1].forEach((player) => {

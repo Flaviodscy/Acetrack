@@ -185,6 +185,13 @@ export default function App() {
   const [voiceStatus, setVoiceStatus] = useState("Voice ready");
   const [voicePrompt, setVoicePrompt] = useState<VoicePrompt | undefined>();
   const hydratedUserRef = useRef<string | undefined>(undefined);
+  const matchRef = useRef(match);
+  const matchOptionsRef = useRef(matchOptions);
+  const pendingAceRef = useRef(pendingAce);
+  const pendingShotTagRef = useRef(pendingShotTag);
+  const pointTagsRef = useRef(pointTags);
+  const voicePromptRef = useRef(voicePrompt);
+  const voiceShouldListenRef = useRef(false);
   const screenRef = useRef(screen);
   const voiceRecognitionRef = useRef<{ start: () => void; stop: () => void; abort?: () => void; onend: (() => void) | null; onerror: ((event: unknown) => void) | null; onresult: ((event: unknown) => void) | null; continuous?: boolean; interimResults?: boolean; lang?: string } | undefined>(undefined);
 
@@ -201,6 +208,37 @@ export default function App() {
   useEffect(() => {
     screenRef.current = screen;
   }, [screen]);
+
+  useEffect(() => {
+    if (screen === "live" || !voiceShouldListenRef.current) return;
+    voiceShouldListenRef.current = false;
+    voiceRecognitionRef.current?.stop();
+    setIsVoiceListening(false);
+  }, [screen]);
+
+  useEffect(() => {
+    matchRef.current = match;
+  }, [match]);
+
+  useEffect(() => {
+    matchOptionsRef.current = matchOptions;
+  }, [matchOptions]);
+
+  useEffect(() => {
+    pendingAceRef.current = pendingAce;
+  }, [pendingAce]);
+
+  useEffect(() => {
+    pendingShotTagRef.current = pendingShotTag;
+  }, [pendingShotTag]);
+
+  useEffect(() => {
+    pointTagsRef.current = pointTags;
+  }, [pointTags]);
+
+  useEffect(() => {
+    voicePromptRef.current = voicePrompt;
+  }, [voicePrompt]);
 
   useEffect(() => {
     let isMounted = true;
@@ -293,6 +331,7 @@ export default function App() {
 
   useEffect(() => {
     return () => {
+      voiceShouldListenRef.current = false;
       voiceRecognitionRef.current?.abort?.();
     };
   }, []);
@@ -392,22 +431,30 @@ export default function App() {
   }
 
   function addPoint(player: 0 | 1, tag: PointTag = {}) {
-    if (match.winner !== undefined) return;
+    const activeMatch = matchRef.current;
+    const activePendingAce = pendingAceRef.current;
+    const activePendingShotTag = pendingShotTagRef.current;
+    if (activeMatch.winner !== undefined) return;
 
-    if (pendingAce !== undefined && pendingAce !== player && tag.acePlayer === undefined) {
-      showMessage(`Ace is tagged for ${match.players[pendingAce]}. Score that player or clear the tag.`);
+    if (activePendingAce !== undefined && activePendingAce !== player && tag.acePlayer === undefined) {
+      showMessage(`Ace is tagged for ${activeMatch.players[activePendingAce]}. Score that player or clear the tag.`);
       return;
     }
 
-    const next = scorePoint(match, player);
+    const next = scorePoint(activeMatch, player);
+    matchRef.current = next;
     setMatch(next);
     const pointTag: PointTag = {
       ...tag,
-      acePlayer: tag.acePlayer ?? (pendingAce === player ? player : undefined),
-      shot: tag.shot ?? pendingShotTag,
-      source: tag.source ?? (pendingAce === player || pendingShotTag ? "tap" : undefined)
+      acePlayer: tag.acePlayer ?? (activePendingAce === player ? player : undefined),
+      shot: tag.shot ?? activePendingShotTag,
+      source: tag.source ?? (activePendingAce === player || activePendingShotTag ? "tap" : undefined)
     };
-    setPointTags((current) => [...current, pointTag]);
+    setPointTags((current) => {
+      const nextTags = [...current, pointTag];
+      pointTagsRef.current = nextTags;
+      return nextTags;
+    });
     if (pointTag.acePlayer !== undefined) {
       setMatchStats((current) => ({ ...current, aces: incrementPair(current.aces, pointTag.acePlayer!) }));
     }
@@ -417,68 +464,91 @@ export default function App() {
     if (pointTag.errorPlayer !== undefined) {
       setMatchStats((current) => ({ ...current, unforcedErrors: incrementPair(current.unforcedErrors, pointTag.errorPlayer!) }));
     }
+    clearPendingScoringTags();
+    playUiSound(player === 0 ? "point" : "opponent", matchOptionsRef.current.soundEnabled);
+    if (next.winner !== undefined) setScreen("complete");
+  }
+
+  function clearPendingScoringTags() {
+    pendingAceRef.current = undefined;
+    pendingShotTagRef.current = undefined;
+    voicePromptRef.current = undefined;
     setPendingAce(undefined);
     setPendingShotTag(undefined);
     setVoicePrompt(undefined);
-    playUiSound(player === 0 ? "point" : "opponent", matchOptions.soundEnabled);
-    if (next.winner !== undefined) setScreen("complete");
+  }
+
+  function clearVoicePrompt() {
+    voicePromptRef.current = undefined;
+    setVoicePrompt(undefined);
   }
 
   function toggleAceTag(player: 0 | 1) {
     setPendingAce((current) => {
       const next = current === player ? undefined : player;
-      showMessage(next === undefined ? "Ace tag cleared" : `Ace tagged for ${match.players[next]}. Tap their point to score it.`);
+      pendingAceRef.current = next;
+      showMessage(next === undefined ? "Ace tag cleared" : `Ace tagged for ${matchRef.current.players[next]}. Tap their point to score it.`);
       return next;
     });
-    setVoicePrompt(undefined);
-    playUiSound("tap", matchOptions.soundEnabled);
+    clearVoicePrompt();
+    playUiSound("tap", matchOptionsRef.current.soundEnabled);
   }
 
   function recordVoicePoint(player: 0 | 1, shot?: string) {
+    const playerName = matchRef.current.players[player];
     addPoint(player, { shot, source: "voice" });
-    setVoiceStatus(`${shot ? `${shot} ` : ""}Point ${match.players[player]}`);
+    setVoiceStatus(`${shot ? `${shot} ` : ""}Point ${playerName}`);
   }
 
   function recordVoiceAce(player: 0 | 1) {
+    const playerName = matchRef.current.players[player];
     addPoint(player, { acePlayer: player, shot: "Ace", source: "voice" });
-    setVoiceStatus(`Ace ${match.players[player]}`);
-    showMessage(`Ace recorded for ${match.players[player]}`);
+    setVoiceStatus(`Ace ${playerName}`);
+    showMessage(`Ace recorded for ${playerName}`);
   }
 
   function recordVoiceWinner(player: 0 | 1, shot?: string) {
+    const playerName = matchRef.current.players[player];
     const label = shot ? `${shot} winner` : "Winner";
     addPoint(player, { winnerPlayer: player, shot: label, source: "voice" });
-    setVoiceStatus(`${label} ${match.players[player]}`);
-    showMessage(`${label} recorded for ${match.players[player]}`);
+    setVoiceStatus(`${label} ${playerName}`);
+    showMessage(`${label} recorded for ${playerName}`);
   }
 
   function recordVoiceError(player: 0 | 1) {
+    const playerName = matchRef.current.players[player];
     const pointWinner = player === 0 ? 1 : 0;
     addPoint(pointWinner, { errorPlayer: player, shot: "Unforced error", source: "voice" });
-    setVoiceStatus(`Error ${match.players[player]}`);
-    showMessage(`Error recorded for ${match.players[player]}`);
+    setVoiceStatus(`Error ${playerName}`);
+    showMessage(`Error recorded for ${playerName}`);
   }
 
   function promptForVoicePlayer(prompt: VoicePrompt) {
     setVoicePrompt(prompt);
+    voicePromptRef.current = prompt;
     setVoiceStatus(prompt.title);
     showMessage(prompt.detail);
   }
 
   function handleVoicePromptSelection(player: 0 | 1) {
-    if (!voicePrompt) return;
+    const activePrompt = voicePromptRef.current ?? voicePrompt;
+    if (!activePrompt) return;
 
-    if (voicePrompt.action === "ace") {
+    completeVoicePromptSelection(activePrompt, player);
+  }
+
+  function completeVoicePromptSelection(prompt: VoicePrompt, player: 0 | 1) {
+    if (prompt.action === "ace") {
       recordVoiceAce(player);
       return;
     }
 
-    if (voicePrompt.action === "winner") {
-      recordVoiceWinner(player, pendingShotTag);
+    if (prompt.action === "winner") {
+      recordVoiceWinner(player, pendingShotTagRef.current);
       return;
     }
 
-    if (voicePrompt.action === "error") {
+    if (prompt.action === "error") {
       recordVoiceError(player);
       return;
     }
@@ -487,21 +557,31 @@ export default function App() {
   }
 
   function undoMatchAction() {
-    if (pendingAce !== undefined) {
+    const activeMatch = matchRef.current;
+    const activePendingAce = pendingAceRef.current;
+    const activePointTags = pointTagsRef.current;
+    if (activePendingAce !== undefined) {
+      pendingAceRef.current = undefined;
       setPendingAce(undefined);
       showMessage("Ace tag cleared");
-      playUiSound("undo", matchOptions.soundEnabled);
+      playUiSound("undo", matchOptionsRef.current.soundEnabled);
       return;
     }
 
-    if (!match.history.length) {
+    if (!activeMatch.history.length) {
       showMessage("No point to undo");
       return;
     }
 
-    const lastTag = pointTags.at(-1);
-    setMatch(undoPoint(match));
-    setPointTags((current) => current.slice(0, -1));
+    const lastTag = activePointTags.at(-1);
+    const previousMatch = undoPoint(activeMatch);
+    matchRef.current = previousMatch;
+    setMatch(previousMatch);
+    setPointTags((current) => {
+      const nextTags = current.slice(0, -1);
+      pointTagsRef.current = nextTags;
+      return nextTags;
+    });
     if (lastTag?.acePlayer !== undefined) {
       setMatchStats((current) => ({ ...current, aces: decrementPair(current.aces, lastTag.acePlayer!) }));
     }
@@ -511,17 +591,16 @@ export default function App() {
     if (lastTag?.errorPlayer !== undefined) {
       setMatchStats((current) => ({ ...current, unforcedErrors: decrementPair(current.unforcedErrors, lastTag.errorPlayer!) }));
     }
-    setVoicePrompt(undefined);
-    playUiSound("undo", matchOptions.soundEnabled);
+    clearVoicePrompt();
+    playUiSound("undo", matchOptionsRef.current.soundEnabled);
   }
 
   function startNewMatch() {
     setMatchMode("setup");
     setSaveStatus("");
+    pointTagsRef.current = [];
     setPointTags([]);
-    setPendingAce(undefined);
-    setPendingShotTag(undefined);
-    setVoicePrompt(undefined);
+    clearPendingScoringTags();
     setScreen("live");
   }
 
@@ -536,10 +615,9 @@ export default function App() {
     setMatchOptions(nextOptions);
     setMatchMode("setup");
     setSaveStatus("");
+    pointTagsRef.current = [];
     setPointTags([]);
-    setPendingAce(undefined);
-    setPendingShotTag(undefined);
-    setVoicePrompt(undefined);
+    clearPendingScoringTags();
     setScreen("live");
   }
 
@@ -564,14 +642,15 @@ export default function App() {
     const normalizedOptions = normalizeMatchOptions(options, profile.name);
     const nextMatch = createMatch(getMatchSideNames(normalizedOptions));
     nextMatch.server = getInitialServerSide(normalizedOptions);
+    matchRef.current = nextMatch;
+    matchOptionsRef.current = normalizedOptions;
     setMatchOptions(normalizedOptions);
     setMatch(nextMatch);
     setMatchStartedAt(Date.now());
     setMatchStats(emptyMatchStats);
+    pointTagsRef.current = [];
     setPointTags([]);
-    setPendingAce(undefined);
-    setPendingShotTag(undefined);
-    setVoicePrompt(undefined);
+    clearPendingScoringTags();
     setSkillFeedback({});
     setOpponentSkillFeedback({});
     setMatchMode("playing");
@@ -584,6 +663,7 @@ export default function App() {
   function toggleSound() {
     setMatchOptions((current) => {
       const next = { ...current, soundEnabled: !current.soundEnabled };
+      matchOptionsRef.current = next;
       playUiSound(next.soundEnabled ? "start" : "tap", next.soundEnabled);
       return next;
     });
@@ -591,6 +671,7 @@ export default function App() {
 
   function toggleVoiceCommands() {
     if (isVoiceListening) {
+      voiceShouldListenRef.current = false;
       voiceRecognitionRef.current?.stop();
       setIsVoiceListening(false);
       setVoiceStatus("Voice paused");
@@ -615,27 +696,46 @@ export default function App() {
       handleVoiceCommand(transcript);
     };
     recognition.onerror = () => {
+      voiceShouldListenRef.current = false;
       setIsVoiceListening(false);
       setVoiceStatus("Voice needs permission");
     };
     recognition.onend = () => {
+      if (voiceShouldListenRef.current) {
+        window.setTimeout(() => {
+          if (!voiceShouldListenRef.current) return;
+          try {
+            recognition.start();
+            setIsVoiceListening(true);
+          } catch {
+            voiceShouldListenRef.current = false;
+            setIsVoiceListening(false);
+            setVoiceStatus("Voice paused. Tap Voice to restart.");
+          }
+        }, 250);
+        return;
+      }
       setIsVoiceListening(false);
     };
     voiceRecognitionRef.current = recognition;
     try {
+      voiceShouldListenRef.current = true;
       recognition.start();
       setIsVoiceListening(true);
       setVoiceStatus("Listening for commands");
     } catch {
+      voiceShouldListenRef.current = false;
       setIsVoiceListening(false);
       setVoiceStatus("Mic blocked. Use command buttons");
     }
   }
 
   function handleVoiceCommand(transcript: string) {
+    const activeMatch = matchRef.current;
     const command = normalizeVoiceText(transcript);
-    const voicePlayer = resolveVoicePlayer(command, match.players);
+    const voicePlayer = resolveVoicePlayer(command, activeMatch.players);
     const shotTag = getVoiceShotTag(command);
+    const activePrompt = voicePromptRef.current;
 
     if (command.includes("undo") || command.includes("back")) {
       undoMatchAction();
@@ -643,7 +743,7 @@ export default function App() {
     }
 
     if (command.includes("end match") || command.includes("finish match")) {
-      playUiSound("end", matchOptions.soundEnabled);
+      playUiSound("end", matchOptionsRef.current.soundEnabled);
       setScreen("complete");
       return;
     }
@@ -653,12 +753,18 @@ export default function App() {
       return;
     }
 
+    if (activePrompt && voicePlayer !== undefined && !hasExplicitVoiceScoringAction(command)) {
+      completeVoicePromptSelection(activePrompt, voicePlayer);
+      return;
+    }
+
     if (shotTag && !command.includes("winner") && !command.includes("point") && !command.includes("score")) {
+      pendingShotTagRef.current = shotTag;
       setPendingShotTag(shotTag);
-      setVoicePrompt(undefined);
+      clearVoicePrompt();
       setVoiceStatus(`${shotTag} tagged for next point`);
-      showMessage(`${shotTag} tagged. Say "point ${getCompactSideName(match.players[0])}" or "point ${getCompactSideName(match.players[1])}".`);
-      playUiSound("tap", matchOptions.soundEnabled);
+      showMessage(`${shotTag} tagged. Say "point ${getCompactSideName(activeMatch.players[0])}" or "point ${getCompactSideName(activeMatch.players[1])}".`);
+      playUiSound("tap", matchOptionsRef.current.soundEnabled);
       return;
     }
 
@@ -671,7 +777,7 @@ export default function App() {
       promptForVoicePlayer({
         action: "ace",
         title: "Ace for who?",
-        detail: `Say "Ace ${getCompactSideName(match.players[0])}" or "Ace ${getCompactSideName(match.players[1])}", or tap a player.`
+        detail: `Say "Ace ${getCompactSideName(activeMatch.players[0])}" or "Ace ${getCompactSideName(activeMatch.players[1])}", or tap a player.`
       });
       return;
     }
@@ -682,11 +788,14 @@ export default function App() {
         return;
       }
 
-      if (shotTag) setPendingShotTag(shotTag);
+      if (shotTag) {
+        pendingShotTagRef.current = shotTag;
+        setPendingShotTag(shotTag);
+      }
       promptForVoicePlayer({
         action: "winner",
         title: "Winner for who?",
-        detail: `Say "winner ${getCompactSideName(match.players[0])}" or "winner ${getCompactSideName(match.players[1])}".`
+        detail: `Say "winner ${getCompactSideName(activeMatch.players[0])}" or "winner ${getCompactSideName(activeMatch.players[1])}".`
       });
       return;
     }
@@ -700,7 +809,7 @@ export default function App() {
       promptForVoicePlayer({
         action: "error",
         title: "Error by who?",
-        detail: `Say "error ${getCompactSideName(match.players[0])}" or "error ${getCompactSideName(match.players[1])}".`
+        detail: `Say "error ${getCompactSideName(activeMatch.players[0])}" or "error ${getCompactSideName(activeMatch.players[1])}".`
       });
       return;
     }
@@ -714,7 +823,7 @@ export default function App() {
       promptForVoicePlayer({
         action: "point",
         title: "Point for who?",
-        detail: `Say "point ${getCompactSideName(match.players[0])}" or "point ${getCompactSideName(match.players[1])}".`
+        detail: `Say "point ${getCompactSideName(activeMatch.players[0])}" or "point ${getCompactSideName(activeMatch.players[1])}".`
       });
       return;
     }
@@ -1373,7 +1482,7 @@ function LiveMatchScreen({
           <span className="action-label">Point {compactSideLabels[0]}{pendingAce === 0 ? " + ace" : ""}</span>
         </button>
         <button className="match-action opponent" onClick={() => onPoint(1)}>
-          <span className="action-icon"><Minus size={26} /></span>
+          <span className="action-icon"><Plus size={26} /></span>
           <span className="action-label">Point {compactSideLabels[1]}{pendingAce === 1 ? " + ace" : ""}</span>
         </button>
         <button className={pendingAce === 0 ? "match-action ace active" : "match-action ace"} onClick={() => onAceTag(0)}>
@@ -1899,15 +2008,19 @@ function SocialScreen({
           <div className="player-list">
             {visibleNearbyPlayers.map((player) => (
               <article className={player.isLive ? "player-row live-player" : "player-row"} key={player.id}>
-                <strong className={player.rank <= 3 ? "rank active" : "rank"}>{player.rank}</strong>
-                <Portrait className={player.portrait} initials={player.avatar} />
-                <div>
-                  <h3>{player.name}{player.isLive && <span className="live-chip">GPS</span>}</h3>
-                  <p>Ace level <b>{player.level}</b>{player.rating && <span> · {player.rating}</span>}</p>
-                  <p><MapPin size={13} /> {player.distance} away</p>
+                <div className="player-card-head">
+                  <strong className={player.rank <= 3 ? "rank active" : "rank"}>{player.rank}</strong>
+                  <Portrait className={player.portrait} initials={player.avatar} />
+                  <div className="player-card-copy">
+                    <h3>{player.name}{player.isLive && <span className="live-chip">GPS</span>}</h3>
+                    <p>Ace level <b>{player.level}</b>{player.rating && <span>{player.rating}</span>}</p>
+                    <p><MapPin size={13} /> {player.distance} away</p>
+                  </div>
                 </div>
-                <span className="streak"><Flame size={16} /> {player.streak} day streak</span>
-                <div className="points"><strong>{player.points.toLocaleString()}</strong><span>PTS</span></div>
+                <div className="player-card-stats">
+                  <span className="streak"><Flame size={16} /> {player.streak} day streak</span>
+                  <div className="points"><strong>{player.points.toLocaleString()}</strong><span>PTS</span></div>
+                </div>
                 <div className="player-actions">
                   <button disabled={isFriend(friends, player.id)} onClick={() => addFriend(player)}>{isFriend(friends, player.id) ? "Friend" : "Add"}</button>
                   <button onClick={() => challengePlayer(player, player.id)}>Challenge</button>
@@ -3414,11 +3527,33 @@ function normalizeVoiceText(value: string) {
 }
 
 function resolveVoicePlayer(command: string, players: [string, string]): 0 | 1 | undefined {
-  if (/\b(player|side|team)?\s*(1|one)\b/.test(command) || /\b(me|my point|my side|us|we)\b/.test(command)) return 0;
-  if (/\b(player|side|team)?\s*(2|two)\b/.test(command) || /\b(opponent|other|their|them|they)\b/.test(command)) return 1;
+  if (isVoicePlayerOne(command)) return 0;
+  if (isVoicePlayerTwo(command)) return 1;
   if (commandMatchesSide(command, players[0])) return 0;
   if (commandMatchesSide(command, players[1])) return 1;
   return undefined;
+}
+
+function isVoicePlayerOne(command: string) {
+  return [
+    /\b(player|side|team|person|number)\s*(1|one|a)\b/,
+    /\b(p1|first player|first side|left side|server one)\b/,
+    /\b(point|score|ace|winner|error|for)\s*(1|one)\b/,
+    /\b(me|my point|my side|mine|us|we)\b/
+  ].some((pattern) => pattern.test(command)) || /^(1|one|player one|player 1)$/.test(command);
+}
+
+function isVoicePlayerTwo(command: string) {
+  return [
+    /\b(player|side|team|person|number)\s*(2|two|b)\b/,
+    /\b(p2|second player|second side|right side|server two)\b/,
+    /\b(point|score|ace|winner|error|for)\s*(2|two)\b/,
+    /\b(opponent|other side|their point|their side|them|they)\b/
+  ].some((pattern) => pattern.test(command)) || /^(2|two|player two|player 2)$/.test(command);
+}
+
+function hasExplicitVoiceScoringAction(command: string) {
+  return /\b(point|score|ace|winner|error|mistake|double fault)\b/.test(command);
 }
 
 function getVoiceShotTag(command: string) {
