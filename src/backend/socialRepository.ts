@@ -41,9 +41,24 @@ export type SocialAction = {
   updatedAt: string;
 };
 
+export type SocialMessage = {
+  id: string;
+  body: string;
+  createdAt: string;
+  friendshipId: string;
+  fromProfile: SocialProfileSnapshot;
+  fromUserId: string;
+  kind: "challenge" | "message";
+  toProfile: SocialProfileSnapshot;
+  toUserId: string;
+  updatedAt: string;
+  userIds: [string, string];
+};
+
 const LOCAL_REQUESTS_KEY = "acetrack:social-requests";
 const LOCAL_FRIENDS_KEY = "acetrack:friendships";
 const LOCAL_ACTIONS_KEY = "acetrack:social-actions";
+const LOCAL_MESSAGES_KEY = "acetrack:social-messages";
 
 export function toSocialProfile(profile: UserProfile): SocialProfileSnapshot {
   return {
@@ -175,6 +190,45 @@ export async function updateSocialActionStatus(action: SocialAction, status: Soc
   return { mode: "local" as const };
 }
 
+export async function sendSocialMessage(
+  friendship: Friendship,
+  fromUserId: string,
+  fromProfile: UserProfile,
+  toUserId: string,
+  toProfile: SocialProfileSnapshot,
+  body: string,
+  kind: SocialMessage["kind"] = "message"
+) {
+  const message = createSocialMessage(friendship, fromUserId, toUserId, toSocialProfile(fromProfile), toProfile, body, kind);
+  const db = await getFirebaseDb();
+
+  if (db) {
+    const { doc, setDoc } = await import("firebase/firestore");
+    await setDoc(doc(db, "socialMessages", message.id), message);
+    return { message, mode: "firebase" as const };
+  }
+
+  writeLocalList(LOCAL_MESSAGES_KEY, [message, ...readLocalList<SocialMessage>(LOCAL_MESSAGES_KEY)]);
+  return { message, mode: "local" as const };
+}
+
+export async function listFriendMessages(friendshipId: string, userId: string) {
+  const db = await getFirebaseDb();
+
+  if (db) {
+    const { collection, getDocs, query, where } = await import("firebase/firestore");
+    const snapshot = await getDocs(query(collection(db, "socialMessages"), where("userIds", "array-contains", userId)));
+    return snapshot.docs
+      .map((doc) => ({ ...doc.data(), id: doc.id }) as SocialMessage)
+      .filter((message) => message.friendshipId === friendshipId)
+      .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  }
+
+  return readLocalList<SocialMessage>(LOCAL_MESSAGES_KEY)
+    .filter((message) => message.friendshipId === friendshipId)
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+}
+
 function createFriendRequest(fromUserId: string, toUserId: string, fromProfile: SocialProfileSnapshot, toProfile: SocialProfileSnapshot): FriendRequest {
   const now = new Date().toISOString();
   return {
@@ -213,6 +267,35 @@ function createSocialAction(type: SocialAction["type"], fromUserId: string, toUs
     toUserId,
     type,
     updatedAt: now
+  };
+}
+
+function createSocialMessage(
+  friendship: Friendship,
+  fromUserId: string,
+  toUserId: string,
+  fromProfile: SocialProfileSnapshot,
+  toProfile: SocialProfileSnapshot,
+  body: string,
+  kind: SocialMessage["kind"]
+): SocialMessage {
+  if (!friendship.userIds.includes(fromUserId) || !friendship.userIds.includes(toUserId)) {
+    throw new Error("Messages can only be sent to friends.");
+  }
+
+  const now = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    body: body.trim(),
+    createdAt: now,
+    friendshipId: friendship.id,
+    fromProfile,
+    fromUserId,
+    kind,
+    toProfile,
+    toUserId,
+    updatedAt: now,
+    userIds: friendship.userIds
   };
 }
 

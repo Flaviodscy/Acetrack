@@ -60,5 +60,11 @@ service cloud.firestore {
       allow read, update, delete: if isSocialParticipant(resource.data) || isAdmin();
       allow create: if isSocialSender(request.resource.data);
     }
+
+    match /socialMessages/{messageId} {
+      allow read, update, delete: if isParticipant(resource.data) || isAdmin();
+      allow create: if isSocialSender(request.resource.data)
+        && isParticipant(request.resource.data);
+    }
   }
 }

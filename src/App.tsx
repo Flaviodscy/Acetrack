@@ -20,6 +20,7 @@ import {
   LogOut,
   Mail,
   MapPin,
+  MessageCircle,
   Mic,
   Minus,
   MoreHorizontal,
@@ -28,6 +29,7 @@ import {
   Plus,
   Radio,
   RotateCcw,
+  Send,
   Share2,
   ShieldCheck,
   Sparkles,
@@ -62,14 +64,17 @@ import {
   declineFriendRequest,
   listFriendRequests,
   listFriendships,
+  listFriendMessages,
   listIncomingSocialActions,
   sendFriendRequest,
+  sendSocialMessage,
   sendSocialAction,
   toSocialProfile,
   updateSocialActionStatus,
   type FriendRequest,
   type Friendship,
   type SocialAction,
+  type SocialMessage,
   type SocialProfileSnapshot
 } from "./backend/socialRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
@@ -1751,6 +1756,8 @@ function SocialScreen({
   const [nearbyList, setNearbyList] = useState<NearbyPlayer[]>([]);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [friends, setFriends] = useState<Friendship[]>([]);
+  const [friendMessages, setFriendMessages] = useState<Record<string, SocialMessage[]>>({});
+  const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [socialActions, setSocialActions] = useState<SocialAction[]>([]);
   const [socialStatus, setSocialStatus] = useState("Connect with real players nearby.");
   const [isLocating, setIsLocating] = useState(false);
@@ -1771,6 +1778,8 @@ function SocialScreen({
     if (!currentUserId) {
       setFriendRequests([]);
       setFriends([]);
+      setFriendMessages({});
+      setMessageDrafts({});
       setSocialActions([]);
       setSocialStatus("Sign in to add friends and send challenges.");
       return;
@@ -1823,10 +1832,21 @@ function SocialScreen({
       setFriendRequests(requests);
       setFriends(friendships);
       setSocialActions(actions);
+      await loadFriendMessageThreads(friendships, userId);
       setSocialStatus(friendships.length ? `${friendships.length} friend${friendships.length === 1 ? "" : "s"} connected` : "No friends yet. Add real players from Nearby.");
     } catch (error) {
       setSocialStatus(getSocialErrorMessage(error));
     }
+  }
+
+  async function loadFriendMessageThreads(friendships: Friendship[], userId: string) {
+    if (!friendships.length) {
+      setFriendMessages({});
+      return;
+    }
+
+    const entries = await Promise.all(friendships.map(async (friendship) => [friendship.id, await listFriendMessages(friendship.id, userId)] as const));
+    setFriendMessages(Object.fromEntries(entries));
   }
 
   async function refreshNearbyFromGps() {
@@ -1915,6 +1935,37 @@ function SocialScreen({
     const awarded = await onAwardXp(`challenge:${result.action.id}`, createEngagementReward("challenge", 15, "Sent challenge"));
     onAction(awarded ? `Challenge sent to ${player.name} · +15 Ace XP` : `Challenge sent to ${player.name}`);
     onSocialChanged();
+  }
+
+  async function challengeFriend(friendship: Friendship, friend: SocialProfileSnapshot, friendId: string) {
+    await challengePlayer(friend, friendId);
+    await sendFriendMessage(friendship, friend, friendId, `Challenge sent. Want to play this week?`, "challenge", false);
+  }
+
+  async function sendFriendMessage(
+    friendship: Friendship,
+    friend: SocialProfileSnapshot,
+    friendId: string,
+    fallbackBody?: string,
+    kind: SocialMessage["kind"] = "message",
+    clearDraft = true
+  ) {
+    const body = (fallbackBody ?? messageDrafts[friendship.id] ?? "").trim();
+    if (!body) {
+      onAction("Write a message first");
+      return;
+    }
+
+    const activeUser = appUser ?? await getCurrentAppUser();
+    const result = await sendSocialMessage(friendship, activeUser.id, profile, friendId, friend, body, kind);
+    setFriendMessages((current) => ({
+      ...current,
+      [friendship.id]: [...(current[friendship.id] ?? []), result.message]
+    }));
+    if (clearDraft) {
+      setMessageDrafts((current) => ({ ...current, [friendship.id]: "" }));
+    }
+    onAction(kind === "challenge" ? `Challenge message sent to ${friend.name}` : `Message sent to ${friend.name}`);
   }
 
   async function pokePlayer(player: SocialProfileSnapshot, playerId: string) {
@@ -2042,20 +2093,57 @@ function SocialScreen({
 
       {activeTab === "Friends" && (
         <div className="request-list">
-          <p className="social-status">{socialStatus}</p>
+          <p className="social-status">Friends live here. Send a message, challenge them, or open SMS with an invite. {socialStatus}</p>
           {friends.map((friendship) => {
             const friend = getFriendProfile(friendship, currentUserId);
             const friendId = getFriendId(friendship, currentUserId);
+            const messages = friendMessages[friendship.id] ?? [];
+            const recentMessages = messages.slice(-3);
             if (!friend || !friendId) return null;
             return (
-            <article className="request-row friend-row" key={friendship.id}>
-              <Portrait className={friend.portrait} initials={friend.avatar} />
-              <div><h3>{friend.name}</h3><p>{friend.rating} · You: {profile.rating}</p></div>
-              <div className="request-actions">
-                <button onClick={() => pokePlayer(friend, friendId)}>Poke</button>
-                <button onClick={() => challengePlayer(friend, friendId)}>Challenge</button>
-              </div>
-            </article>
+              <article className="friend-thread-card" key={friendship.id}>
+                <div className="friend-thread-head">
+                  <Portrait className={friend.portrait} initials={friend.avatar} />
+                  <div>
+                    <p className="eyebrow">Friend</p>
+                    <h3>{friend.name}</h3>
+                    <span>{friend.rating} · You: {profile.rating}</span>
+                  </div>
+                </div>
+                <div className="friend-message-list">
+                  {recentMessages.map((message) => (
+                    <div className={message.fromUserId === currentUserId ? "friend-message mine" : "friend-message"} key={message.id}>
+                      <strong>{message.kind === "challenge" ? "Challenge" : message.fromProfile.name}</strong>
+                      <p>{message.body}</p>
+                      <span>{formatMessageTime(message.createdAt)}</span>
+                    </div>
+                  ))}
+                  {!recentMessages.length && (
+                    <div className="friend-message-empty">
+                      <MessageCircle size={18} />
+                      <span>No messages yet. Start with a challenge or quick note.</span>
+                    </div>
+                  )}
+                </div>
+                <form className="friend-message-form" onSubmit={(event) => {
+                  event.preventDefault();
+                  sendFriendMessage(friendship, friend, friendId);
+                }}>
+                  <input
+                    aria-label={`Message ${friend.name}`}
+                    maxLength={180}
+                    onChange={(event) => setMessageDrafts((current) => ({ ...current, [friendship.id]: event.target.value }))}
+                    placeholder={`Message ${getCompactSideName(friend.name)}`}
+                    value={messageDrafts[friendship.id] ?? ""}
+                  />
+                  <button type="submit"><Send size={17} /> Send</button>
+                </form>
+                <div className="friend-quick-actions">
+                  <button onClick={() => pokePlayer(friend, friendId)}>Poke</button>
+                  <button onClick={() => challengeFriend(friendship, friend, friendId)}><Trophy size={17} /> Challenge</button>
+                  <a className="ghost-button sms-link" href={getSmsInviteHref(profile.name)}><Mail size={17} /> SMS invite</a>
+                </div>
+              </article>
             );
           })}
           {!friends.length && (
@@ -2070,6 +2158,7 @@ function SocialScreen({
 
       {activeTab === "Requests" && (
         <div className="request-list">
+          <p className="social-status">Challenge center: incoming friend requests, pokes, and match challenges appear here.</p>
           {friendRequests.map((request) => (
             <article className="request-row" key={request.id}>
               <Portrait className={request.fromProfile.portrait} initials={request.fromProfile.avatar} />
@@ -3476,6 +3565,17 @@ function getFriendId(friendship: Friendship, currentUserId?: string) {
 function getFriendProfile(friendship: Friendship, currentUserId?: string) {
   const friendId = getFriendId(friendship, currentUserId);
   return friendId ? friendship.profiles[friendId] : undefined;
+}
+
+function formatMessageTime(createdAt: string) {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function getSmsInviteHref(playerName: string) {
+  const body = `Join me on AceTrack for a tennis match. I am ${playerName}.`;
+  return `sms:&body=${encodeURIComponent(body)}`;
 }
 
 function useElapsedTime(startedAt: number | undefined, running: boolean) {
