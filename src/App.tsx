@@ -80,6 +80,20 @@ import "./styles.css";
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account" | "admin";
 type AuthPhase = "loading" | "signed-out" | "signed-in";
 type MatchMode = "setup" | "playing";
+type GpsPoint = {
+  accuracy?: number;
+  latitude: number;
+  longitude: number;
+};
+type TennisCourt = {
+  details?: string;
+  distance: string;
+  distanceKm: number;
+  id: string;
+  lat: number;
+  lng: number;
+  name: string;
+};
 type PointTag = {
   acePlayer?: 0 | 1;
   winnerPlayer?: 0 | 1;
@@ -1633,6 +1647,11 @@ function SocialScreen({
   const [isLocating, setIsLocating] = useState(false);
   const [gpsAlwaysOn, setGpsAlwaysOn] = usePersistentState("acetrack:gps-always-on", false);
   const [radiusKm, setRadiusKm] = usePersistentState("acetrack:gps-radius-km", 15);
+  const [courtOrigin, setCourtOrigin] = useState<GpsPoint | undefined>();
+  const [tennisCourts, setTennisCourts] = useState<TennisCourt[]>([]);
+  const [courtStatus, setCourtStatus] = useState("Use GPS to find real tennis courts nearby.");
+  const [isLoadingCourts, setIsLoadingCourts] = useState(false);
+  const lastCourtLookupRef = useRef("");
   const currentUserId = appUser?.id;
 
   useEffect(() => {
@@ -1671,12 +1690,15 @@ function SocialScreen({
 
   async function syncNearbyPosition(position: GeolocationPosition, announce: boolean) {
     const activeUser = appUser ?? await getCurrentAppUser();
+    const gpsPoint = toGpsPoint(position.coords);
+    setCourtOrigin(gpsPoint);
     await savePlayerLocation(activeUser.id, profile, position.coords);
     const liveLocations = await listPlayerLocations();
     const livePlayers = toNearbyPlayers(liveLocations, position.coords, activeUser.id);
     const combined = rankNearbyPlayers(livePlayers);
     setNearbyList(combined);
     setNearbyStatus(livePlayers.length ? `${livePlayers.length} live players found nearby` : "GPS is on. Waiting for friends nearby");
+    await refreshTennisCourts(gpsPoint, false);
     if (announce) onAction("Nearby players updated");
   }
 
@@ -1715,6 +1737,52 @@ function SocialScreen({
       setNearbyStatus(getLocationErrorMessage(error));
     } finally {
       setIsLocating(false);
+    }
+  }
+
+  async function refreshTennisCourtsFromGps() {
+    if (courtOrigin) {
+      await refreshTennisCourts(courtOrigin, true);
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      setCourtStatus("GPS is not available in this browser");
+      return;
+    }
+
+    setIsLoadingCourts(true);
+    setCourtStatus("Requesting GPS to find tennis courts...");
+
+    try {
+      const position = await getCurrentPosition();
+      const gpsPoint = toGpsPoint(position.coords);
+      setCourtOrigin(gpsPoint);
+      await refreshTennisCourts(gpsPoint, true);
+    } catch (error) {
+      setCourtStatus(getLocationErrorMessage(error));
+    } finally {
+      setIsLoadingCourts(false);
+    }
+  }
+
+  async function refreshTennisCourts(origin: GpsPoint, force: boolean) {
+    const lookupRadiusKm = getCourtLookupRadiusKm(radiusKm);
+    const lookupKey = `${origin.latitude.toFixed(4)},${origin.longitude.toFixed(4)},${lookupRadiusKm}`;
+    if (!force && lastCourtLookupRef.current === lookupKey) return;
+
+    lastCourtLookupRef.current = lookupKey;
+    setIsLoadingCourts(true);
+    setCourtStatus(`Searching real tennis courts within ${lookupRadiusKm} km...`);
+
+    try {
+      const courts = await fetchNearbyTennisCourts(origin, lookupRadiusKm);
+      setTennisCourts(courts);
+      setCourtStatus(courts.length ? `${courts.length} tennis court${courts.length === 1 ? "" : "s"} found within ${lookupRadiusKm} km` : `No tennis courts found within ${lookupRadiusKm} km`);
+    } catch (error) {
+      setCourtStatus(error instanceof Error ? error.message : "Could not load tennis courts from OpenStreetMap");
+    } finally {
+      setIsLoadingCourts(false);
     }
   }
 
@@ -1819,6 +1887,14 @@ function SocialScreen({
               {gpsAlwaysOn ? "Turn GPS off" : "Keep GPS on"}
             </button>
           </article>
+          <TennisCourtMapCard
+            courts={tennisCourts}
+            isLoading={isLoadingCourts}
+            origin={courtOrigin}
+            radiusKm={getCourtLookupRadiusKm(radiusKm)}
+            status={courtStatus}
+            onRefresh={refreshTennisCourtsFromGps}
+          />
           <p className="list-label">Nearby players</p>
           <div className="player-list">
             {visibleNearbyPlayers.map((player) => (
@@ -2699,6 +2775,94 @@ function EmptyState({
   );
 }
 
+function TennisCourtMapCard({
+  courts,
+  isLoading,
+  origin,
+  radiusKm,
+  status,
+  onRefresh
+}: {
+  courts: TennisCourt[];
+  isLoading: boolean;
+  origin?: GpsPoint;
+  radiusKm: number;
+  status: string;
+  onRefresh: () => void | Promise<void>;
+}) {
+  const markers = origin ? createCourtMapMarkers(origin, courts, radiusKm) : [];
+  const mapTiles = origin ? createOsmTileGrid(origin, radiusKm) : [];
+  const visibleCourts = courts.slice(0, 6);
+
+  return (
+    <article className="tennis-court-card">
+      <div className="section-row">
+        <div>
+          <p className="eyebrow">Tennis courts</p>
+          <h2>Courts in your area</h2>
+        </div>
+        <button className="text-button" disabled={isLoading} onClick={onRefresh}>{isLoading ? "Searching..." : courts.length ? "Refresh" : "Find courts"}</button>
+      </div>
+      <p className="court-map-status">{status}</p>
+      <div className={origin ? "court-map-shell" : "court-map-shell empty"}>
+        {origin ? (
+          <>
+            {mapTiles.map((tile) => (
+              <img
+                alt=""
+                aria-hidden="true"
+                className="court-map-tile"
+                key={tile.key}
+                src={tile.url}
+                style={{ left: tile.left, top: tile.top }}
+              />
+            ))}
+            <span className="court-marker self" style={{ left: "50%", top: "50%" }}><MapPin size={15} /></span>
+            {markers.map((marker) => (
+              <a
+                aria-label={`${marker.name} on map`}
+                className="court-marker"
+                href={getMapsUrl(marker)}
+                key={marker.id}
+                rel="noreferrer"
+                style={{ left: marker.left, top: marker.top }}
+                target="_blank"
+                title={marker.name}
+              >
+                <MapPin size={15} />
+              </a>
+            ))}
+            <span className="map-attribution">OpenStreetMap</span>
+          </>
+        ) : (
+          <div className="court-map-empty">
+            <MapPin size={22} />
+            <strong>Share GPS to load nearby courts</strong>
+          </div>
+        )}
+      </div>
+      <div className="court-list">
+        {visibleCourts.map((court) => (
+          <a className="court-row" href={getMapsUrl(court)} key={court.id} rel="noreferrer" target="_blank">
+            <span><MapPin size={17} /></span>
+            <div>
+              <strong>{court.name}</strong>
+              <small>{court.distance}{court.details ? ` · ${court.details}` : ""}</small>
+            </div>
+            <ArrowRight size={17} />
+          </a>
+        ))}
+        {!visibleCourts.length && (
+          <div className="court-empty-row">
+            <strong>{origin ? "No courts found in this radius" : "No court search yet"}</strong>
+            <span>{origin ? "Try a wider distance or refresh GPS." : "Tap Find courts to search OpenStreetMap near you."}</span>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function MiniMatchScore({ record }: { record: MatchRecord }) {
   const displaySets = record.sets.filter((set) => set.games[0] > 0 || set.games[1] > 0 || set.winner !== undefined).slice(0, 3);
   const sets = displaySets.length ? displaySets : [{ games: [0, 0] as [number, number] }];
@@ -2981,6 +3145,174 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
       timeout: 12000
     });
   });
+}
+
+function toGpsPoint(coords: GeolocationCoordinates): GpsPoint {
+  return {
+    accuracy: Math.round(coords.accuracy),
+    latitude: coords.latitude,
+    longitude: coords.longitude
+  };
+}
+
+async function fetchNearbyTennisCourts(origin: GpsPoint, radiusKm: number): Promise<TennisCourt[]> {
+  const radiusMeters = Math.round(radiusKm * 1000);
+  const query = `
+    [out:json][timeout:18];
+    (
+      nwr["sport"~"(^|;|,)tennis(;|,|$)"](around:${radiusMeters},${origin.latitude},${origin.longitude});
+      nwr["leisure"="pitch"]["sport"="tennis"](around:${radiusMeters},${origin.latitude},${origin.longitude});
+      nwr["leisure"="sports_centre"]["sport"~"tennis"](around:${radiusMeters},${origin.latitude},${origin.longitude});
+    );
+    out center tags 40;
+  `;
+
+  const response = await fetch("https://overpass-api.de/api/interpreter", {
+    body: new URLSearchParams({ data: query }).toString(),
+    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    throw new Error("Could not load tennis courts from OpenStreetMap");
+  }
+
+  const payload = await response.json() as {
+    elements?: Array<{
+      center?: { lat?: number; lon?: number };
+      id: number;
+      lat?: number;
+      lon?: number;
+      tags?: Record<string, string>;
+      type: string;
+    }>;
+  };
+
+  const courts = (payload.elements ?? []).flatMap((element) => {
+    const lat = typeof element.lat === "number" ? element.lat : element.center?.lat;
+    const lng = typeof element.lon === "number" ? element.lon : element.center?.lon;
+    if (typeof lat !== "number" || typeof lng !== "number") return [];
+
+    const distanceKm = getDistanceKm(origin.latitude, origin.longitude, lat, lng);
+    if (distanceKm > radiusKm) return [];
+
+    const tags = element.tags ?? {};
+    const name = getCourtName(tags);
+    const details = getCourtDetails(tags);
+
+    return [{
+      details,
+      distance: `${distanceKm.toFixed(distanceKm < 10 ? 1 : 0)} km`,
+      distanceKm,
+      id: `${element.type}-${element.id}`,
+      lat,
+      lng,
+      name
+    }];
+  });
+
+  return dedupeTennisCourts(courts)
+    .sort((a, b) => a.distanceKm - b.distanceKm)
+    .slice(0, 20);
+}
+
+function getCourtLookupRadiusKm(radiusKm: number) {
+  return Math.max(1, Math.min(25, Math.round(radiusKm)));
+}
+
+function getCourtName(tags: Record<string, string>) {
+  return tags.name?.trim() || tags.operator?.trim() || tags.club?.trim() || "Tennis court";
+}
+
+function getCourtDetails(tags: Record<string, string>) {
+  return [
+    tags.surface,
+    tags.access && tags.access !== "yes" ? tags.access : undefined,
+    tags.indoor === "yes" ? "indoor" : undefined,
+    tags.lit === "yes" ? "lights" : undefined
+  ].filter(Boolean).join(" · ") || undefined;
+}
+
+function dedupeTennisCourts(courts: TennisCourt[]) {
+  const seen = new Map<string, TennisCourt>();
+  for (const court of courts) {
+    const locationKey = `${court.name.toLowerCase()}-${court.lat.toFixed(5)}-${court.lng.toFixed(5)}`;
+    const existing = seen.get(locationKey);
+    if (!existing || court.details && !existing.details) {
+      seen.set(locationKey, court);
+    }
+  }
+  return [...seen.values()];
+}
+
+function createCourtMapMarkers(origin: GpsPoint, courts: TennisCourt[], radiusKm: number) {
+  const latRadius = Math.max(0.01, radiusKm / 111);
+  const lngRadius = Math.max(0.01, radiusKm / (111 * Math.max(0.2, Math.cos(toRadians(origin.latitude)))));
+
+  return courts.slice(0, 12).map((court) => ({
+    ...court,
+    left: `${clampMapPercent(50 + ((court.lng - origin.longitude) / (lngRadius * 2)) * 100)}%`,
+    top: `${clampMapPercent(50 - ((court.lat - origin.latitude) / (latRadius * 2)) * 100)}%`
+  }));
+}
+
+function createOsmTileGrid(origin: GpsPoint, radiusKm: number) {
+  const zoom = radiusKm <= 3 ? 14 : radiusKm <= 8 ? 13 : radiusKm <= 15 ? 12 : 11;
+  const tileCount = 2 ** zoom;
+  const centerX = Math.floor(lonToTileX(origin.longitude, zoom));
+  const centerY = Math.floor(latToTileY(origin.latitude, zoom));
+  const tiles: Array<{ key: string; left: string; top: string; url: string }> = [];
+
+  for (let y = -1; y <= 1; y += 1) {
+    for (let x = -1; x <= 1; x += 1) {
+      const tileX = modulo(centerX + x, tileCount);
+      const tileY = Math.max(0, Math.min(tileCount - 1, centerY + y));
+      tiles.push({
+        key: `${zoom}-${tileX}-${tileY}`,
+        left: `${(x + 1) * 33.3333}%`,
+        top: `${(y + 1) * 33.3333}%`,
+        url: `https://tile.openstreetmap.org/${zoom}/${tileX}/${tileY}.png`
+      });
+    }
+  }
+
+  return tiles;
+}
+
+function lonToTileX(lng: number, zoom: number) {
+  return ((lng + 180) / 360) * 2 ** zoom;
+}
+
+function latToTileY(lat: number, zoom: number) {
+  const radians = toRadians(lat);
+  return ((1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2) * 2 ** zoom;
+}
+
+function clampMapPercent(value: number) {
+  return Math.max(6, Math.min(94, value));
+}
+
+function modulo(value: number, divisor: number) {
+  return ((value % divisor) + divisor) % divisor;
+}
+
+function getMapsUrl(point: Pick<TennisCourt, "lat" | "lng" | "name">) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${point.name} ${point.lat},${point.lng}`)}`;
+}
+
+function getDistanceKm(latA: number, lngA: number, latB: number, lngB: number) {
+  const earthRadiusKm = 6371;
+  const dLat = toRadians(latB - latA);
+  const dLng = toRadians(lngB - lngA);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRadians(latA)) * Math.cos(toRadians(latB)) * Math.sin(dLng / 2) ** 2;
+
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(a));
+}
+
+function toRadians(value: number) {
+  return value * Math.PI / 180;
 }
 
 function createPrivateHomeArea(coords: GeolocationCoordinates): NonNullable<UserProfile["homeArea"]> {
