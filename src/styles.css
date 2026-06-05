@@ -10901,3 +10901,135 @@ body,
     font-size: 0.78rem;
   }
 }
+
+/* Friend search: real profile lookup with a clear invite fallback. */
+.friend-search-card {
+  display: grid;
+  gap: 14px;
+  padding: clamp(18px, 4vw, 24px);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: var(--shadow-soft), inset 0 0 0 1px rgba(38, 54, 31, 0.06);
+}
+
+.friend-search-card form,
+.friend-search-controls,
+.friend-invite-row,
+.friend-search-result {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.friend-search-card form {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.friend-search-card h2,
+.friend-search-card p {
+  margin: 0;
+}
+
+.friend-search-card h2 {
+  color: var(--ink);
+  font-size: clamp(1.3rem, 4vw, 1.85rem);
+  line-height: 1.1;
+}
+
+.friend-search-card p,
+.friend-search-status,
+.friend-invite-row span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.friend-search-controls {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.friend-search-controls input {
+  width: 100%;
+  min-width: 0;
+  min-height: 52px;
+  border: 0;
+  border-radius: 999px;
+  outline: none;
+  padding: 0 18px;
+  background: rgba(246, 248, 236, 0.92);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+  box-shadow: inset 0 0 0 1px rgba(38, 54, 31, 0.08);
+}
+
+.friend-search-status {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.friend-search-results {
+  display: grid;
+  gap: 10px;
+}
+
+.friend-search-result {
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  padding: 12px;
+  border-radius: 20px;
+  background: rgba(246, 248, 236, 0.78);
+}
+
+.friend-search-result .portrait {
+  width: 54px;
+  height: 54px;
+}
+
+.friend-search-result h3,
+.friend-search-result p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.friend-search-result h3 {
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.15;
+}
+
+.friend-search-result .request-actions {
+  grid-column: 1 / -1;
+}
+
+.friend-invite-row {
+  padding: 14px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(205, 234, 95, 0.22), rgba(255, 255, 255, 0.74));
+}
+
+.friend-invite-row strong {
+  display: block;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.friend-invite-row > div:last-child {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.friend-invite-row .ghost-button {
+  min-height: 46px;
+  justify-content: center;
+  text-decoration: none;
+}
+
+@media (max-width: 520px) {
+  .friend-search-controls,
+  .friend-invite-row > div:last-child {
+    grid-template-columns: 1fr;
+  }
+}

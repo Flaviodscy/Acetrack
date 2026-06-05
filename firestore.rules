@@ -46,6 +46,11 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isAdmin();
     }
 
+    match /publicProfiles/{userId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if isOwner(userId) || isAdmin();
+    }
+
     match /socialRequests/{requestId} {
       allow read, update, delete: if isSocialParticipant(resource.data) || isAdmin();
       allow create: if isSocialSender(request.resource.data);

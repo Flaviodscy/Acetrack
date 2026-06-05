@@ -67,6 +67,7 @@ import {
   type MatchRemoteSession
 } from "./backend/matchRemoteRepository";
 import { listPlayerLocations, savePlayerLocation, subscribeToPlayerLocations, toNearbyPlayers } from "./backend/nearbyRepository";
+import { searchPlayerDirectoryProfiles, type PlayerDirectoryProfile } from "./backend/playerDirectoryRepository";
 import { createManagedUserProfile, deleteUserProfile, listUserProfiles, loadUserProfile, saveUserProfile } from "./backend/profileRepository";
 import {
   acceptFriendRequest,
@@ -484,9 +485,9 @@ export default function App() {
       const nextProfile = sanitizeProfile(result.profile, appUser);
       setProfile(nextProfile);
       setProfileSaveStatus(result.mode === "firebase" ? "Profile loaded from cloud" : "Profile loaded locally");
-      if (nextProfile !== result.profile) {
+      if (nextProfile !== result.profile || result.mode === "firebase") {
         await saveUserProfile(appUser.id, nextProfile);
-        setProfileSaveStatus("Profile cleaned and saved");
+        setProfileSaveStatus(nextProfile !== result.profile ? "Profile cleaned and saved" : "Profile loaded from cloud");
       }
       return nextProfile;
     }
@@ -2031,6 +2032,10 @@ function SocialScreen({
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [socialActions, setSocialActions] = useState<SocialAction[]>([]);
   const [socialStatus, setSocialStatus] = useState("Connect with real players nearby.");
+  const [friendSearchQuery, setFriendSearchQuery] = useState("");
+  const [friendSearchResults, setFriendSearchResults] = useState<PlayerDirectoryProfile[]>([]);
+  const [friendSearchStatus, setFriendSearchStatus] = useState("Search real AceTrack players by name.");
+  const [isSearchingFriends, setIsSearchingFriends] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [gpsAlwaysOn, setGpsAlwaysOn] = usePersistentState("acetrack:gps-always-on", false);
   const [radiusKm, setRadiusKm] = usePersistentState("acetrack:gps-radius-km", 15);
@@ -2307,6 +2312,7 @@ function SocialScreen({
 
   const visibleNearbyPlayers = nearbyList.filter((player) => player.distanceKm <= radiusKm);
   const requestCount = friendRequests.length + sentFriendRequests.length + socialActions.length;
+  const inviteLink = getFriendInviteUrl(profile, currentUserId);
 
   function updateRadius(value: number) {
     setRadiusKm(Math.max(1, Math.min(250, Math.round(value) || 1)));
@@ -2326,6 +2332,69 @@ function SocialScreen({
       onSocialChanged();
     } catch (error) {
       onAction(getSocialErrorMessage(error));
+    }
+  }
+
+  async function searchFriendByName() {
+    const term = friendSearchQuery.trim();
+    if (term.length < 2) {
+      setFriendSearchResults([]);
+      setFriendSearchStatus("Type at least 2 letters to search.");
+      return;
+    }
+
+    if (!currentUserId) {
+      setFriendSearchResults([]);
+      setFriendSearchStatus("Sign in to search AceTrack players.");
+      return;
+    }
+
+    setIsSearchingFriends(true);
+    setFriendSearchStatus("Searching real AceTrack profiles...");
+
+    try {
+      const results = await searchPlayerDirectoryProfiles(term, currentUserId);
+      setFriendSearchResults(results);
+      setFriendSearchStatus(results.length ? `${results.length} player${results.length === 1 ? "" : "s"} found` : "No AceTrack player found with that name. Send an invite link instead.");
+    } catch (error) {
+      setFriendSearchResults([]);
+      setFriendSearchStatus(getSocialErrorMessage(error));
+    } finally {
+      setIsSearchingFriends(false);
+    }
+  }
+
+  async function addDirectoryFriend(player: PlayerDirectoryProfile) {
+    try {
+      const activeUser = appUser ?? await getCurrentAppUser();
+      if (activeUser.mode !== "firebase") {
+        onAction("Sign in to add friends across devices");
+        return;
+      }
+
+      const result = await sendFriendRequest(activeUser.id, profile, player.id, directoryProfileToSocialProfile(player));
+      setSentFriendRequests((current) => upsertFriendRequest(current, result.request));
+      onAction(`Friend request sent to ${player.name}`);
+      onSocialChanged();
+    } catch (error) {
+      onAction(getSocialErrorMessage(error));
+    }
+  }
+
+  async function shareInviteLink() {
+    const text = `${profile.name} invited you to AceTrack. Open this link, create your profile, then search each other by name.`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Join me on AceTrack", text, url: inviteLink });
+        onAction("Invite shared");
+        return;
+      }
+
+      await navigator.clipboard.writeText(inviteLink);
+      onAction("Invite link copied");
+    } catch (error) {
+      console.warn("Invite share failed.", error);
+      onAction("Invite link ready");
     }
   }
 
@@ -2427,6 +2496,68 @@ function SocialScreen({
           </button>
         ))}
       </div>
+
+      <article className="friend-search-card">
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          searchFriendByName();
+        }}>
+          <div>
+            <p className="eyebrow">Find friend</p>
+            <h2>Search by name.</h2>
+            <p>Find real AceTrack profiles, then add or challenge them.</p>
+          </div>
+          <div className="friend-search-controls">
+            <input
+              aria-label="Search friend by name"
+              onChange={(event) => setFriendSearchQuery(event.target.value)}
+              placeholder="Type a friend name"
+              value={friendSearchQuery}
+            />
+            <button className="hero-action compact" disabled={isSearchingFriends} type="submit">
+              <Users size={18} /> {isSearchingFriends ? "Searching..." : "Search"}
+            </button>
+          </div>
+        </form>
+        <p className="friend-search-status">{friendSearchStatus}</p>
+        {friendSearchResults.length > 0 && (
+          <div className="friend-search-results">
+            {friendSearchResults.map((player) => {
+              const friendshipStatus = getNearbyFriendshipStatus(friends, friendRequests, sentFriendRequests, player.id, currentUserId);
+              return (
+                <article className="friend-search-result" key={player.id}>
+                  <Portrait className={player.portrait} initials={player.avatar} />
+                  <div>
+                    <h3>{player.name}</h3>
+                    <p>{player.rating}{player.location ? ` · ${player.location}` : ""}</p>
+                  </div>
+                  <div className="request-actions">
+                    <button
+                      disabled={friendshipStatus.kind === "friend" || friendshipStatus.kind === "sent"}
+                      onClick={() => friendshipStatus.kind === "incoming" && friendshipStatus.request ? acceptRequest(friendshipStatus.request) : addDirectoryFriend(player)}
+                    >
+                      {friendshipStatus.label}
+                    </button>
+                    <button onClick={() => challengePlayer(directoryProfileToSocialProfile(player), player.id)}>Challenge</button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+        {friendSearchQuery.trim().length >= 2 && !friendSearchResults.length && !isSearchingFriends && (
+          <div className="friend-invite-row">
+            <div>
+              <strong>Not on AceTrack yet?</strong>
+              <span>Send your friend an invite link to open the app and create a profile.</span>
+            </div>
+            <div>
+              <button className="ghost-button" onClick={shareInviteLink}><Share2 size={17} /> Share link</button>
+              <a className="ghost-button sms-link" href={getSmsInviteHref(profile.name, inviteLink)}><Mail size={17} /> SMS</a>
+            </div>
+          </div>
+        )}
+      </article>
 
       {activeTab === "Nearby" && (
         <>
@@ -4050,6 +4181,17 @@ function nearbyPlayerToSocialProfile(player: NearbyPlayer): SocialProfileSnapsho
   };
 }
 
+function directoryProfileToSocialProfile(player: PlayerDirectoryProfile): SocialProfileSnapshot {
+  return {
+    avatar: player.avatar,
+    level: player.level,
+    name: player.name,
+    points: player.points,
+    portrait: player.portrait,
+    rating: player.rating
+  };
+}
+
 function isFriend(friendships: Friendship[], playerId: string) {
   return friendships.some((friendship) => friendship.userIds.includes(playerId));
 }
@@ -4099,8 +4241,16 @@ function formatMessageTime(createdAt: string) {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function getSmsInviteHref(playerName: string) {
-  const body = `Join me on AceTrack for a tennis match. I am ${playerName}.`;
+function getFriendInviteUrl(profile: UserProfile, userId?: string) {
+  const url = new URL(window.location.origin);
+  url.searchParams.set("invite", "friend");
+  url.searchParams.set("fromName", profile.name);
+  if (userId) url.searchParams.set("from", userId);
+  return url.toString();
+}
+
+function getSmsInviteHref(playerName: string, inviteUrl = window.location.origin) {
+  const body = `Join me on AceTrack for a tennis match. I am ${playerName}. ${inviteUrl}`;
   return `sms:&body=${encodeURIComponent(body)}`;
 }
 

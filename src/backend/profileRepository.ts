@@ -1,4 +1,5 @@
 import { getFirebaseDb } from "./firebaseClient";
+import { deletePlayerDirectoryProfile, publishPlayerDirectoryProfile } from "./playerDirectoryRepository";
 import type { AdminUserProfile, BackendMode, UserProfile } from "../types/domain";
 
 const LOCAL_PROFILE_KEY = "acetrack:profile";
@@ -38,6 +39,9 @@ export async function saveUserProfile(userId: string, profile: UserProfile): Pro
         ...serializeProfile(profile),
         updatedAt: new Date().toISOString()
       });
+      await publishPlayerDirectoryProfile(userId, profile).catch((error) => {
+        console.warn("Public profile publish failed.", error);
+      });
       return { mode: "firebase" };
     } catch (error) {
       console.warn("Firebase profile save failed, saved locally.", error);
@@ -73,6 +77,7 @@ export async function deleteUserProfile(userId: string): Promise<{ mode: Backend
   const { deleteDoc, doc } = await import("firebase/firestore");
   await deleteDoc(doc(db, "users", userId, "profile", "main"));
   await deleteDoc(doc(db, "publicLocations", userId)).catch(() => undefined);
+  await deletePlayerDirectoryProfile(userId);
   return { mode: "firebase" };
 }
 
