@@ -154,6 +154,25 @@ const emptyMatchStats: MatchStatsInput = {
   unforcedErrors: [0, 0]
 };
 
+const famousTennisPlayers = [
+  "Roger Federer",
+  "Serena Williams",
+  "Rafael Nadal",
+  "Novak Djokovic",
+  "Venus Williams",
+  "Carlos Alcaraz",
+  "Iga Swiatek",
+  "Coco Gauff",
+  "Naomi Osaka",
+  "Maria Sharapova",
+  "Steffi Graf",
+  "Andre Agassi",
+  "Pete Sampras",
+  "Billie Jean King",
+  "Martina Navratilova",
+  "Jannik Sinner"
+];
+
 const navItems: Array<{ screen: Screen; label: string; icon: typeof Home }> = [
   { screen: "home", label: "Play", icon: Home },
   { screen: "highlights", label: "Matches", icon: Calendar },
@@ -2358,9 +2377,21 @@ function ProfileScreen({
               <span>Handedness</span>
               <input value={draft.hand} onChange={(event) => updateDraft("hand", event.target.value)} />
             </label>
-            <label>
-              <span>Goals / style</span>
-              <input value={draft.favoritePro} onChange={(event) => updateDraft("favoritePro", event.target.value)} placeholder="Baseline, serve + volley, fitness..." />
+            <label className="profile-goal-field">
+              <span>Tennis inspiration</span>
+              <input value={draft.favoritePro} onChange={(event) => updateDraft("favoritePro", event.target.value)} placeholder="Choose a famous player or write your own goal" />
+              <div className="famous-player-pills" aria-label="Famous tennis player inspirations">
+                {famousTennisPlayers.map((playerName) => (
+                  <button
+                    className={draft.favoritePro === playerName ? "active" : ""}
+                    key={playerName}
+                    type="button"
+                    onClick={() => updateDraft("favoritePro", playerName)}
+                  >
+                    {playerName}
+                  </button>
+                ))}
+              </div>
             </label>
             <label>
               <span>Racket</span>
@@ -2477,7 +2508,7 @@ function ProfileScreen({
         </div>
         <div className="pro-content">
           <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
-          <div><strong>{profile.hand}</strong><span>{profile.favoritePro || "Add your goals and style"}</span></div>
+          <div><strong>{profile.hand}</strong><span>{profile.favoritePro ? `Inspired by ${profile.favoritePro}` : "Choose a tennis inspiration"}</span></div>
           <div className="pro-bars">
             {profile.skills.slice(0, 6).map(([label, value]) => (
               <span key={label}><b>{getSkillCode(label)}</b><i style={{ height: `${Math.max(8, value)}%` }} /></span>
