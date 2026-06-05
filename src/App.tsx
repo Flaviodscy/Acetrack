@@ -4278,7 +4278,7 @@ function Portrait({
   photoDataUrl?: string;
 }) {
   return (
-    <div className={`portrait ${className}`}>
+    <div className={`portrait ${photoDataUrl ? "has-photo" : ""} ${className}`}>
       {photoDataUrl ? <img alt="" src={photoDataUrl} /> : <span>{initials}</span>}
     </div>
   );

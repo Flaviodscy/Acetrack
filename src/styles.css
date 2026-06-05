@@ -3825,6 +3825,16 @@ h1,
   object-fit: cover;
 }
 
+.portrait.has-photo {
+  place-items: center;
+  background: #f5f8eb;
+}
+
+.portrait.has-photo::before,
+.portrait.has-photo::after {
+  display: none;
+}
+
 .edit-profile-card {
   display: grid;
   gap: 16px;
