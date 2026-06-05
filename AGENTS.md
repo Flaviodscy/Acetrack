@@ -11,6 +11,8 @@ AceTrack should feel real, reliable, minimal, premium, and consistent.
 - Skills can be self-set, then adjusted by post-match opponent feedback.
 - A player should not vote for their own skills. Post-match feedback must clearly distinguish "opponent votes for you" from "you vote for opponent."
 - Challenges, pokes, friend requests, and share cards must perform real actions, not just show placeholder messages.
+- Accepted friend requests must appear in the Friends list for both users. The app should recover from accepted requests even if a friendship document is missing.
+- Sending a challenge must create a real incoming challenge for the other user. XP/profile reward failures must not make the challenge action look broken.
 
 ## Visual Direction
 
@@ -33,6 +35,7 @@ AceTrack should feel real, reliable, minimal, premium, and consistent.
 - Live Match should prioritize tripod use: big readable score, simple point controls, correct serving side, and a clean full-screen landscape layout.
 - Match Cards should use real saved match data and produce a shareable social card.
 - Social should support real nearby discovery, friend requests, friends, pokes, and challenges.
+- Friends should have an accessible profile view with clear Challenge and Message actions.
 - Profile should show earned points, match level, skills, vote counts, and editable identity/equipment.
 - Admin should manage real profiles without fake seed users.
 

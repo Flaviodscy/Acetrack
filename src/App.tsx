@@ -2062,6 +2062,7 @@ function SocialScreen({
   const [friends, setFriends] = useState<Friendship[]>([]);
   const [friendMessages, setFriendMessages] = useState<Record<string, SocialMessage[]>>({});
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
+  const [selectedFriendProfile, setSelectedFriendProfile] = useState<{ friendship: Friendship; profile: SocialProfileSnapshot; userId: string } | undefined>();
   const [socialActions, setSocialActions] = useState<SocialAction[]>([]);
   const [socialStatus, setSocialStatus] = useState("Connect with real players nearby.");
   const [friendSearchQuery, setFriendSearchQuery] = useState("");
@@ -2100,6 +2101,7 @@ function SocialScreen({
       setFriends([]);
       setFriendMessages({});
       setMessageDrafts({});
+      setSelectedFriendProfile(undefined);
       setSocialActions([]);
       setSocialStatus("Sign in to add friends and send challenges.");
       return;
@@ -2478,15 +2480,35 @@ function SocialScreen({
   }
 
   async function challengePlayer(player: NearbyPlayer | SocialProfileSnapshot, playerId: string) {
-    const activeUser = appUser ?? await getCurrentAppUser();
-    const result = await sendSocialAction("challenge", activeUser.id, profile, playerId, "distance" in player ? nearbyPlayerToSocialProfile(player) : player);
-    const awarded = await onAwardXp(`challenge:${result.action.id}`, createEngagementReward("challenge", 15, "Sent challenge"));
-    onAction(awarded ? `Challenge sent to ${player.name} · +15 Ace XP` : `Challenge sent to ${player.name}`);
-    onSocialChanged();
+    try {
+      const activeUser = appUser ?? await getCurrentAppUser();
+      if (activeUser.mode !== "firebase") {
+        onAction("Sign in to send challenges across devices");
+        return false;
+      }
+
+      const socialProfile = "distance" in player ? nearbyPlayerToSocialProfile(player) : player;
+      const result = await sendSocialAction("challenge", activeUser.id, profile, playerId, socialProfile);
+      let awarded = false;
+      try {
+        awarded = await onAwardXp(`challenge:${result.action.id}`, createEngagementReward("challenge", 15, "Sent challenge"));
+      } catch (error) {
+        console.warn("Challenge XP reward failed after challenge was sent.", error);
+      }
+
+      onAction(awarded ? `Challenge sent to ${player.name} · +15 Ace XP` : `Challenge sent to ${player.name}`);
+      await loadSocialConnections(activeUser.id);
+      onSocialChanged();
+      return true;
+    } catch (error) {
+      onAction(getSocialErrorMessage(error));
+      return false;
+    }
   }
 
   async function challengeFriend(friendship: Friendship, friend: SocialProfileSnapshot, friendId: string) {
-    await challengePlayer(friend, friendId);
+    const challengeSent = await challengePlayer(friend, friendId);
+    if (!challengeSent) return;
     await sendFriendMessage(friendship, friend, friendId, `Challenge sent. Want to play this week?`, "challenge", false);
   }
 
@@ -2504,16 +2526,25 @@ function SocialScreen({
       return;
     }
 
-    const activeUser = appUser ?? await getCurrentAppUser();
-    const result = await sendSocialMessage(friendship, activeUser.id, profile, friendId, friend, body, kind);
-    setFriendMessages((current) => ({
-      ...current,
-      [friendship.id]: [...(current[friendship.id] ?? []), result.message]
-    }));
-    if (clearDraft) {
-      setMessageDrafts((current) => ({ ...current, [friendship.id]: "" }));
+    try {
+      const activeUser = appUser ?? await getCurrentAppUser();
+      if (activeUser.mode !== "firebase") {
+        onAction("Sign in to send messages across devices");
+        return;
+      }
+
+      const result = await sendSocialMessage(friendship, activeUser.id, profile, friendId, friend, body, kind);
+      setFriendMessages((current) => ({
+        ...current,
+        [friendship.id]: [...(current[friendship.id] ?? []), result.message]
+      }));
+      if (clearDraft) {
+        setMessageDrafts((current) => ({ ...current, [friendship.id]: "" }));
+      }
+      onAction(kind === "challenge" ? `Challenge message sent to ${friend.name}` : `Message sent to ${friend.name}`);
+    } catch (error) {
+      onAction(getSocialErrorMessage(error));
     }
-    onAction(kind === "challenge" ? `Challenge message sent to ${friend.name}` : `Message sent to ${friend.name}`);
   }
 
   async function pokePlayer(player: SocialProfileSnapshot, playerId: string) {
@@ -2524,10 +2555,12 @@ function SocialScreen({
   }
 
   async function acceptRequest(request: FriendRequest) {
-    await acceptFriendRequest(request, profile);
+    const result = await acceptFriendRequest(request, profile);
     setFriendRequests((current) => current.filter((item) => item.id !== request.id));
+    setFriends((current) => upsertFriendship(current, result.friendship));
     onAction(`${request.fromProfile.name} added`);
     await loadSocialConnections();
+    onTab("Friends");
     onSocialChanged();
   }
 
@@ -2775,6 +2808,7 @@ function SocialScreen({
                   <button type="submit"><Send size={17} /> Send</button>
                 </form>
                 <div className="friend-quick-actions">
+                  <button onClick={() => setSelectedFriendProfile({ friendship, profile: friend, userId: friendId })}><CircleUserRound size={17} /> Profile</button>
                   <button onClick={() => pokePlayer(friend, friendId)}>Poke</button>
                   <button onClick={() => challengeFriend(friendship, friend, friendId)}><Trophy size={17} /> Challenge</button>
                   <a className="ghost-button sms-link" href={getSmsInviteHref(profile.name)}><Mail size={17} /> SMS invite</a>
@@ -2833,6 +2867,29 @@ function SocialScreen({
             />
           )}
         </div>
+      )}
+
+      {selectedFriendProfile && (
+        <aside className="friend-profile-sheet" role="dialog" aria-label={`${selectedFriendProfile.profile.name} profile`}>
+          <button className="friend-profile-close" aria-label="Close friend profile" onClick={() => setSelectedFriendProfile(undefined)}><X size={18} /></button>
+          <div className="friend-profile-head">
+            <Portrait className={`${selectedFriendProfile.profile.portrait} large`} initials={selectedFriendProfile.profile.avatar} />
+            <div>
+              <p className="eyebrow">Friend profile</p>
+              <h2>{selectedFriendProfile.profile.name}</h2>
+              <span>{selectedFriendProfile.profile.rating}</span>
+            </div>
+          </div>
+          <div className="friend-profile-stats">
+            <div><span>Ace level</span><strong>{selectedFriendProfile.profile.level}</strong></div>
+            <div><span>Points</span><strong>{selectedFriendProfile.profile.points.toLocaleString()}</strong></div>
+            <div><span>Status</span><strong>Friend</strong></div>
+          </div>
+          <div className="button-pair">
+            <button className="hero-action compact" onClick={() => challengeFriend(selectedFriendProfile.friendship, selectedFriendProfile.profile, selectedFriendProfile.userId)}><Trophy size={17} /> Challenge</button>
+            <button className="ghost-button" onClick={() => { setSelectedFriendProfile(undefined); onTab("Friends"); }}><MessageCircle size={17} /> Message</button>
+          </div>
+        </aside>
       )}
       <p className="list-label">Local ladder</p>
       <article className="ladder-card">
@@ -4344,6 +4401,10 @@ function isFriend(friendships: Friendship[], playerId: string) {
 
 function upsertFriendRequest(requests: FriendRequest[], request: FriendRequest) {
   return [request, ...requests.filter((item) => item.id !== request.id)];
+}
+
+function upsertFriendship(friendships: Friendship[], friendship: Friendship) {
+  return [friendship, ...friendships.filter((item) => item.id !== friendship.id)];
 }
 
 function getNearbyFriendshipStatus(

@@ -138,16 +138,18 @@ export async function subscribeToFriendRequests(
 export async function acceptFriendRequest(request: FriendRequest, currentProfile: UserProfile) {
   const now = new Date().toISOString();
   const acceptedRequest: FriendRequest = { ...request, status: "accepted", updatedAt: now };
-  const friendship = createFriendship(request.fromUserId, request.toUserId, {
-    [request.fromUserId]: request.fromProfile,
-    [request.toUserId]: toSocialProfile(currentProfile)
+  const friendship = createFriendshipFromRequest({
+    ...acceptedRequest,
+    toProfile: toSocialProfile(currentProfile)
   });
   const db = await getFirebaseDb();
 
   if (db) {
-    const { doc, setDoc, updateDoc } = await import("firebase/firestore");
-    await updateDoc(doc(db, "socialRequests", request.id), { status: "accepted", updatedAt: now });
-    await setDoc(doc(db, "friendships", friendship.id), friendship);
+    const { doc, writeBatch } = await import("firebase/firestore");
+    const batch = writeBatch(db);
+    batch.set(doc(db, "friendships", friendship.id), friendship);
+    batch.update(doc(db, "socialRequests", request.id), { status: "accepted", toProfile: friendship.profiles[request.toUserId], updatedAt: now });
+    await batch.commit();
     return { friendship, mode: "firebase" as const };
   }
 
@@ -175,11 +177,22 @@ export async function listFriendships(userId: string) {
 
   if (db) {
     const { collection, getDocs, query, where } = await import("firebase/firestore");
-    const snapshot = await getDocs(query(collection(db, "friendships"), where("userIds", "array-contains", userId)));
-    return snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }) as Friendship);
+    const [friendshipSnapshot, incomingRequestSnapshot, sentRequestSnapshot] = await Promise.all([
+      getDocs(query(collection(db, "friendships"), where("userIds", "array-contains", userId))),
+      getDocs(query(collection(db, "socialRequests"), where("toUserId", "==", userId))),
+      getDocs(query(collection(db, "socialRequests"), where("fromUserId", "==", userId)))
+    ]);
+    return mergeFriendships([
+      ...friendshipSnapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }) as Friendship),
+      ...toAcceptedFriendships(incomingRequestSnapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }) as FriendRequest)),
+      ...toAcceptedFriendships(sentRequestSnapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }) as FriendRequest))
+    ]);
   }
 
-  return readLocalList<Friendship>(LOCAL_FRIENDS_KEY).filter((friendship) => friendship.userIds.includes(userId));
+  return mergeFriendships([
+    ...readLocalList<Friendship>(LOCAL_FRIENDS_KEY).filter((friendship) => friendship.userIds.includes(userId)),
+    ...toAcceptedFriendships(readLocalList<FriendRequest>(LOCAL_REQUESTS_KEY).filter((request) => request.fromUserId === userId || request.toUserId === userId))
+  ]);
 }
 
 export async function subscribeToFriendships(userId: string, onFriendships: (friendships: Friendship[]) => void, onError?: (error: unknown) => void) {
@@ -190,9 +203,31 @@ export async function subscribeToFriendships(userId: string, onFriendships: (fri
   }
 
   const { collection, onSnapshot, query, where } = await import("firebase/firestore");
-  return onSnapshot(query(collection(db, "friendships"), where("userIds", "array-contains", userId)), (snapshot) => {
-    onFriendships(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }) as Friendship));
+  let friendshipDocs: Friendship[] = [];
+  let incomingAccepted: Friendship[] = [];
+  let sentAccepted: Friendship[] = [];
+  const emit = () => onFriendships(mergeFriendships([...friendshipDocs, ...incomingAccepted, ...sentAccepted]));
+
+  const unsubscribeFriendships = onSnapshot(query(collection(db, "friendships"), where("userIds", "array-contains", userId)), (snapshot) => {
+    friendshipDocs = snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }) as Friendship);
+    emit();
   }, (error) => onError?.(error));
+
+  const unsubscribeIncoming = onSnapshot(query(collection(db, "socialRequests"), where("toUserId", "==", userId)), (snapshot) => {
+    incomingAccepted = toAcceptedFriendships(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }) as FriendRequest));
+    emit();
+  }, (error) => onError?.(error));
+
+  const unsubscribeSent = onSnapshot(query(collection(db, "socialRequests"), where("fromUserId", "==", userId)), (snapshot) => {
+    sentAccepted = toAcceptedFriendships(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id }) as FriendRequest));
+    emit();
+  }, (error) => onError?.(error));
+
+  return () => {
+    unsubscribeFriendships();
+    unsubscribeIncoming();
+    unsubscribeSent();
+  };
 }
 
 export async function sendSocialAction(type: SocialAction["type"], fromUserId: string, fromProfile: UserProfile, toUserId: string, toProfile: SocialProfileSnapshot) {
@@ -336,6 +371,38 @@ function createFriendship(firstUserId: string, secondUserId: string, profiles: R
     profiles,
     updatedAt: now,
     userIds
+  };
+}
+
+function createFriendshipFromRequest(request: FriendRequest): Friendship {
+  return createFriendship(request.fromUserId, request.toUserId, {
+    [request.fromUserId]: request.fromProfile,
+    [request.toUserId]: request.toProfile
+  });
+}
+
+function toAcceptedFriendships(requests: FriendRequest[]) {
+  return requests
+    .filter((request) => request.status === "accepted")
+    .map(createFriendshipFromRequest);
+}
+
+function mergeFriendships(friendships: Friendship[]) {
+  const byId = new Map<string, Friendship>();
+  friendships.forEach((friendship) => {
+    const current = byId.get(friendship.id);
+    byId.set(friendship.id, current ? mergeFriendship(current, friendship) : friendship);
+  });
+
+  return Array.from(byId.values()).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+}
+
+function mergeFriendship(current: Friendship, next: Friendship): Friendship {
+  return {
+    ...current,
+    ...next,
+    profiles: { ...current.profiles, ...next.profiles },
+    updatedAt: Date.parse(next.updatedAt) >= Date.parse(current.updatedAt) ? next.updatedAt : current.updatedAt
   };
 }
 
