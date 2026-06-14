@@ -88,6 +88,25 @@ export type NearbyPlayer = {
   updatedAt?: string;
 };
 
+export type HighlightClip = {
+  id: string;
+  matchId: string;
+  tag: HighlightTag;
+  title: string;
+  createdAt: string;
+  duration: string;
+  pointInfo: string;
+  players: [string, string];
+  winnerIndex: 0 | 1;
+  trajectory: {
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
+    isNetTouch?: boolean;
+  };
+};
+
 export type MatchRecord = {
   id: string;
   userId: string;
@@ -115,6 +134,8 @@ export type MatchRecord = {
     bonusPercent: number;
     tokensUsed: number;
   };
+  clips?: HighlightClip[];
 };
 
 export type BackendMode = "local" | "firebase";
+

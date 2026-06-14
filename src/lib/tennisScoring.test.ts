@@ -86,4 +86,21 @@ describe("tennis scoring", () => {
     match = undoPoint(match);
     expect(getPointDisplay(match)).toEqual(["15", "0"]);
   });
+
+  it("records point-by-point history snapshots correctly", () => {
+    let match = createMatch(["Flavio", "Tania"]);
+    expect(match.history).toHaveLength(0);
+
+    match = scorePoint(match, 0);
+    expect(match.history).toHaveLength(1);
+    expect(match.history[0].pointScore).toEqual([0, 0]);
+
+    match = scorePoint(match, 1);
+    expect(match.history).toHaveLength(2);
+    expect(match.history[1].pointScore).toEqual([1, 0]);
+
+    match = undoPoint(match);
+    expect(match.history).toHaveLength(1);
+    expect(match.pointScore).toEqual([1, 0]);
+  });
 });

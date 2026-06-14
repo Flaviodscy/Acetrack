@@ -17,7 +17,7 @@ export type MatchState = {
   history: MatchSnapshot[];
 };
 
-type MatchSnapshot = Omit<MatchState, "history">;
+export type MatchSnapshot = Omit<MatchState, "history">;
 
 const POINT_LABELS = ["0", "15", "30", "40"];
 

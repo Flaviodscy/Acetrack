@@ -22,6 +22,7 @@ import {
   MapPin,
   MessageCircle,
   Mic,
+  MicOff,
   Minus,
   MoreHorizontal,
   Shuffle,
@@ -40,6 +41,7 @@ import {
   UserPlus,
   Users,
   Video,
+  Tv,
   Volume2,
   VolumeX,
   X,
@@ -86,6 +88,7 @@ import {
   subscribeToIncomingSocialActions,
   toSocialProfile,
   updateSocialActionStatus,
+  getPointsFromRating,
   type FriendRequest,
   type Friendship,
   type SocialAction,
@@ -93,8 +96,9 @@ import {
   type SocialProfileSnapshot
 } from "./backend/socialRepository";
 import { usePersistentState } from "./hooks/usePersistentState";
-import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint, type MatchState } from "./lib/tennisScoring";
-import type { AdminUserProfile, MatchRecord, NearbyPlayer, UserProfile } from "./types/domain";
+import { createMatch, getCompletedSets, getFinalScore, getPointDisplay, scorePoint, undoPoint, type MatchState, type MatchSnapshot } from "./lib/tennisScoring";
+import type { AdminUserProfile, HighlightClip, HighlightTag, MatchRecord, NearbyPlayer, UserProfile } from "./types/domain";
+import { playRacketHit, playCrowdCheer, playAceChime, playBallBounce } from "./lib/audioSynth";
 import "./styles.css";
 
 type Screen = "home" | "live" | "complete" | "highlights" | "social" | "profile" | "account" | "admin";
@@ -153,6 +157,7 @@ type MatchOptions = {
   sideB: [string, string];
   singles: boolean;
   soundEnabled: boolean;
+  voiceEnabled: boolean;
 };
 type RemoteRouteParams = {
   players: [string, string];
@@ -170,7 +175,8 @@ const defaultMatchOptions: MatchOptions = {
   sideA: [user.name, "Partner"],
   sideB: [opponent.name, "Partner"],
   singles: true,
-  soundEnabled: true
+  soundEnabled: true,
+  voiceEnabled: true
 };
 
 const emptyMatchStats: MatchStatsInput = {
@@ -238,6 +244,11 @@ export default function App() {
   const [voicePrompt, setVoicePrompt] = useState<VoicePrompt | undefined>();
   const [remoteSession, setRemoteSession] = usePersistentState<MatchRemoteSession | undefined>("acetrack:match-remote-session", undefined);
   const [remoteStatus, setRemoteStatus] = useState("Watch remote starts after the match begins.");
+  const [showWatchSimulator, setShowWatchSimulator] = useState(false);
+  const [activePokeAnimation, setActivePokeAnimation] = useState<string | null>(null);
+  const [lastAnimatedActionId, setLastAnimatedActionId] = useState("");
+  const [clippedHighlights, setClippedHighlights] = usePersistentState<HighlightClip[]>("acetrack:clipped-highlights", []);
+  const [currentMatchId, setCurrentMatchId] = usePersistentState<string>("acetrack:current-match-id", crypto.randomUUID());
   const remoteParams = useMemo(() => getRemoteRouteParams(), []);
   const hydratedUserRef = useRef<string | undefined>(undefined);
   const handledRemoteCommandIdsRef = useRef(new Set<string>());
@@ -331,6 +342,16 @@ export default function App() {
       unsubscribe();
     };
   }, [matchMode, remoteSession, screen]);
+
+  useEffect(() => {
+    if (incomingActions.length > 0) {
+      const latest = incomingActions[0];
+      if (latest.type === "poke" && latest.id !== lastAnimatedActionId) {
+        setLastAnimatedActionId(latest.id);
+        setActivePokeAnimation(latest.fromProfile.name);
+      }
+    }
+  }, [incomingActions, lastAnimatedActionId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -564,6 +585,7 @@ export default function App() {
     }
     clearPendingScoringTags();
     playUiSound(player === 0 ? "point" : "opponent", matchOptionsRef.current.soundEnabled);
+    announceScore(next, activeMatch.players, pointTag, player, matchOptionsRef.current.voiceEnabled);
     if (next.winner !== undefined) setScreen("complete");
   }
 
@@ -661,6 +683,19 @@ export default function App() {
     setScreen("complete");
   }
 
+  function handleSimulatorCommand(type: "pointA" | "pointB" | "aceA" | "aceB" | "undo" | "end") {
+    const cmd: MatchRemoteCommand = {
+      id: crypto.randomUUID(),
+      sessionId: remoteSession?.id || "simulated",
+      token: remoteSession?.token || "simulated",
+      type,
+      createdAt: new Date().toISOString(),
+      handled: false
+    };
+    handleRemoteCommand(cmd);
+    playUiSound(type === "undo" ? "undo" : type === "end" ? "end" : "point", matchOptions.soundEnabled);
+  }
+
   function promptForVoicePlayer(prompt: VoicePrompt) {
     setVoicePrompt(prompt);
     voicePromptRef.current = prompt;
@@ -731,12 +766,105 @@ export default function App() {
     }
     clearVoicePrompt();
     playUiSound("undo", matchOptionsRef.current.soundEnabled);
+    announceScore(previousMatch, previousMatch.players, {}, 0, matchOptionsRef.current.voiceEnabled, true);
+  }
+
+  function clipLastPoint(tag?: HighlightTag, title?: string) {
+    const activeMatch = matchRef.current;
+    if (activeMatch.history.length === 0) {
+      showMessage("Play at least one point to clip a highlight!");
+      return;
+    }
+
+    const prev = activeMatch.history[activeMatch.history.length - 1];
+    const next = activeMatch;
+
+    let winnerIndex: 0 | 1 = 0;
+    if (next.sets.length > prev.sets.length) {
+      const lastSet = next.sets[prev.sets.length];
+      winnerIndex = (lastSet.winner ?? 0) as 0 | 1;
+    } else if (next.currentSet.games[0] > prev.currentSet.games[0]) {
+      winnerIndex = 0;
+    } else if (next.currentSet.games[1] > prev.currentSet.games[1]) {
+      winnerIndex = 1;
+    } else if (next.pointScore[0] > prev.pointScore[0]) {
+      winnerIndex = 0;
+    } else if (next.pointScore[1] > prev.pointScore[1]) {
+      winnerIndex = 1;
+    }
+
+    // Determine the type tag of the point
+    const lastIndex = activeMatch.history.length - 1;
+    const lastTag = pointTagsRef.current[lastIndex];
+    let clipTag: HighlightTag = "Rally";
+    if (lastTag?.acePlayer !== undefined) {
+      clipTag = "Ace";
+    } else if (lastTag?.winnerPlayer !== undefined || lastTag?.shot?.toLowerCase().includes("winner")) {
+      clipTag = "Winner";
+    } else if (next.winner !== undefined) {
+      clipTag = "Match Point";
+    } else if (tag) {
+      clipTag = tag;
+    }
+
+    let clipTitle = title;
+    if (!clipTitle) {
+      if (clipTag === "Ace") {
+        clipTitle = `Ace by ${next.players[winnerIndex]}`;
+      } else if (clipTag === "Winner") {
+        clipTitle = `${lastTag?.shot || "Winner"} by ${next.players[winnerIndex]}`;
+      } else if (clipTag === "Match Point") {
+        clipTitle = `Match Point by ${next.players[winnerIndex]}`;
+      } else {
+        clipTitle = `Winning Rally by ${next.players[winnerIndex]}`;
+      }
+    }
+
+    // Generate random coordinates for court (width: 320, height: 160)
+    // winner side coordinates -> opponent side coordinates
+    const startLeft = winnerIndex === 0;
+    const startX = startLeft
+      ? Math.floor(40 + Math.random() * 80)
+      : Math.floor(200 + Math.random() * 80);
+    const startY = Math.floor(30 + Math.random() * 100);
+    const endX = startLeft
+      ? Math.floor(180 + Math.random() * 100)
+      : Math.floor(40 + Math.random() * 100);
+    const endY = Math.floor(30 + Math.random() * 100);
+
+    // pointInfo details (e.g. Set 1, 30-15)
+    const activeSetNum = next.sets.length + 1;
+    const [pA, pB] = getPointDisplay({ ...prev, history: [] } as MatchState);
+    const prevGames = prev.currentSet.games;
+    const pointInfo = `Set ${activeSetNum}, Game: ${prevGames[0]}-${prevGames[1]}, Score: ${pA}-${pB}`;
+
+    const newClip: HighlightClip = {
+      id: `clip-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      matchId: currentMatchId,
+      tag: clipTag,
+      title: clipTitle,
+      createdAt: new Date().toISOString(),
+      duration: "0:06",
+      pointInfo,
+      players: next.players,
+      winnerIndex,
+      trajectory: {
+        startX,
+        startY,
+        endX,
+        endY
+      }
+    };
+
+    setClippedHighlights((current) => [...current, newClip]);
+    showMessage(`Point clipped: ${clipTitle}`);
   }
 
   function startNewMatch() {
     setMatchMode("setup");
     setSaveStatus("");
     resetRemoteScoring();
+    setCurrentMatchId(crypto.randomUUID());
     pointTagsRef.current = [];
     setPointTags([]);
     clearPendingScoringTags();
@@ -756,6 +884,7 @@ export default function App() {
     setMatchMode("setup");
     setSaveStatus("");
     resetRemoteScoring();
+    setCurrentMatchId(crypto.randomUUID());
     pointTagsRef.current = [];
     setPointTags([]);
     clearPendingScoringTags();
@@ -787,6 +916,7 @@ export default function App() {
     const nextMatch = createMatch(getMatchSideNames(normalizedOptions));
     nextMatch.server = getInitialServerSide(normalizedOptions);
     resetRemoteScoring("Creating watch remote...");
+    setCurrentMatchId(crypto.randomUUID());
     matchRef.current = nextMatch;
     matchOptionsRef.current = normalizedOptions;
     setMatchOptions(normalizedOptions);
@@ -858,6 +988,15 @@ export default function App() {
       const next = { ...current, soundEnabled: !current.soundEnabled };
       matchOptionsRef.current = next;
       playUiSound(next.soundEnabled ? "start" : "tap", next.soundEnabled);
+      return next;
+    });
+  }
+
+  function toggleVoiceReferee() {
+    setMatchOptions((current) => {
+      const next = { ...current, voiceEnabled: !current.voiceEnabled };
+      matchOptionsRef.current = next;
+      playUiSound("tap", next.soundEnabled);
       return next;
     });
   }
@@ -1037,6 +1176,8 @@ export default function App() {
       matchOptionsRef.current.sideUserIds?.[1] || ""
     ];
     const record = createMatchRecord(match, appUser.id, elapsedMatchTime, matchStats, feedback, opponentFeedback, sideUserIds);
+    record.id = currentMatchId;
+    record.clips = clippedHighlights.filter((clip) => clip.matchId === currentMatchId);
     const sharedRecords = createSharedMatchRecords(record, appUser.id);
     let result: Awaited<ReturnType<typeof saveMatchRecords>>;
     try {
@@ -1236,6 +1377,7 @@ export default function App() {
             onPoint={addPoint}
             onAceTag={toggleAceTag}
             onSoundToggle={toggleSound}
+            onVoiceRefereeToggle={toggleVoiceReferee}
             onUndo={undoMatchAction}
             onComplete={() => setScreen("complete")}
             onEndMatch={() => {
@@ -1250,6 +1392,8 @@ export default function App() {
             onVoiceToggle={toggleVoiceCommands}
             voicePrompt={voicePrompt}
             voiceStatus={voiceStatus}
+            onShowWatchSimulator={() => setShowWatchSimulator(true)}
+            onClipPoint={clipLastPoint}
           />
         )}
         {screen === "complete" && (
@@ -1269,6 +1413,8 @@ export default function App() {
             onSave={saveCurrentMatch}
             onOpponentSkillFeedback={setOpponentMatchSkillFeedback}
             onSkillFeedback={setReceivedSkillFeedback}
+            history={match.history}
+            match={match}
           />
         )}
         {screen === "highlights" && (
@@ -1281,6 +1427,8 @@ export default function App() {
             onAction={showMessage}
             onAwardXp={awardProfileXp}
             onFilter={setActiveFilter}
+            clips={clippedHighlights}
+            soundEnabled={matchOptions.soundEnabled}
           />
         )}
         {screen === "social" && (
@@ -1293,6 +1441,7 @@ export default function App() {
             onStartChallenge={startChallenge}
             onSocialChanged={() => appUser && refreshIncomingActions(appUser.id)}
             onTab={setSocialTab}
+            onReceiveLocalPoke={(action) => setIncomingActions((current) => [action, ...current])}
           />
         )}
         {screen === "profile" && (
@@ -1331,6 +1480,19 @@ export default function App() {
         )}
         {screen !== "live" && <BottomNav active={screen} isAdmin={isAdmin} onNavigate={setScreen} />}
         {appMessage && <div className="toast">{appMessage}</div>}
+        {showWatchSimulator && (
+          <AppleWatchSimulator
+            match={match}
+            onAction={handleSimulatorCommand}
+            onClose={() => setShowWatchSimulator(false)}
+          />
+        )}
+        {activePokeAnimation && (
+          <TennisPokeAnimation
+            senderName={activePokeAnimation}
+            onComplete={() => setActivePokeAnimation(null)}
+          />
+        )}
       </div>
     </main>
   );
@@ -1607,6 +1769,9 @@ function MatchSetupScreen({
         <button className="sound-pill" onClick={() => onUpdate({ ...currentOptions, soundEnabled: !currentOptions.soundEnabled })}>
           {currentOptions.soundEnabled ? <Volume2 size={17} /> : <VolumeX size={17} />} Sound
         </button>
+        <button className="sound-pill" onClick={() => onUpdate({ ...currentOptions, voiceEnabled: !currentOptions.voiceEnabled })}>
+          {currentOptions.voiceEnabled ? <Mic size={17} /> : <MicOff size={17} />} Voice Umpire
+        </button>
       </div>
 
       <section className="setup-choice-section scoring-control-section">
@@ -1670,6 +1835,7 @@ function LiveMatchScreen({
   onAceTag,
   onPoint,
   onSoundToggle,
+  onVoiceRefereeToggle,
   onUndo,
   onComplete,
   onEndMatch,
@@ -1680,7 +1846,9 @@ function LiveMatchScreen({
   onVoicePromptSelection,
   onVoiceToggle,
   voicePrompt,
-  voiceStatus
+  voiceStatus,
+  onShowWatchSimulator,
+  onClipPoint
 }: {
   isVoiceListening: boolean;
   options: MatchOptions;
@@ -1699,6 +1867,7 @@ function LiveMatchScreen({
   onAceTag: (player: 0 | 1) => void;
   onPoint: (player: 0 | 1) => void;
   onSoundToggle: () => void;
+  onVoiceRefereeToggle: () => void;
   onUndo: () => void;
   onComplete: () => void;
   onEndMatch: () => void;
@@ -1710,6 +1879,8 @@ function LiveMatchScreen({
   onVoiceToggle: () => void;
   voicePrompt?: VoicePrompt;
   voiceStatus: string;
+  onShowWatchSimulator: () => void;
+  onClipPoint: (tag?: HighlightTag, title?: string) => void;
 }) {
   const sideLabels = playerNames;
   const compactSideLabels = sideLabels.map(getCompactSideName) as [string, string];
@@ -1738,6 +1909,12 @@ function LiveMatchScreen({
         </div>
         <div className="live-top-actions">
           <span><Radio size={16} /> Voice scoring</span>
+          <button className={options.soundEnabled ? "audio-toggle-active" : "audio-toggle-muted"} onClick={onSoundToggle} title="Toggle Sound FX">
+            {options.soundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+          </button>
+          <button className={options.voiceEnabled ? "audio-toggle-active" : "audio-toggle-muted"} onClick={onVoiceRefereeToggle} title="Toggle Voice Umpire">
+            {options.voiceEnabled ? <Mic size={14} /> : <MicOff size={14} />}
+          </button>
           <button onClick={onNewMatch}><Play size={14} /> New</button>
           <button onClick={onExit}><LogOut size={14} /> Exit</button>
           <button className="danger" onClick={onEndMatch}><Trophy size={14} /> End</button>
@@ -1778,6 +1955,7 @@ function LiveMatchScreen({
             <ArrowRight size={16} /> Open
           </a>
           <button className="hero-action compact" disabled={!remoteUrl} onClick={onShareRemote}><Share2 size={16} /> Share</button>
+          <button className="ghost-button" onClick={onShowWatchSimulator}><Sparkles size={16} /> Simulate</button>
         </div>
       </article>
       <div className={voicePrompt ? "voice-assist-panel needs-choice" : "voice-assist-panel"}>
@@ -1843,6 +2021,10 @@ function LiveMatchScreen({
           <span className="action-icon">{options.soundEnabled ? <Volume2 size={24} /> : <VolumeX size={24} />}</span>
           <span className="action-label">Sound</span>
         </button>
+        <button className="match-action utility" onClick={() => onClipPoint()}>
+          <span className="action-icon"><Camera size={24} /></span>
+          <span className="action-label">Clip point</span>
+        </button>
       </div>
 
       {matchWinner !== undefined && <button className="ghost-button" onClick={onComplete}>View recap</button>}
@@ -1865,7 +2047,9 @@ function CompleteScreen({
   onNavigate,
   onSave,
   onOpponentSkillFeedback,
-  onSkillFeedback
+  onSkillFeedback,
+  history,
+  match
 }: {
   backendMode: "local" | "firebase";
   elapsedTime: string;
@@ -1882,6 +2066,8 @@ function CompleteScreen({
   onSave: () => void;
   onOpponentSkillFeedback: (skill: string, value: -1 | 0 | 1 | undefined) => void;
   onSkillFeedback: (skill: string, value: -1 | 0 | 1 | undefined) => void;
+  history: MatchSnapshot[];
+  match: MatchState;
 }) {
   const feedbackSummary = createFeedbackSummary(feedback);
   const opponentFeedbackSummary = createFeedbackSummary(opponentFeedback);
@@ -1907,6 +2093,8 @@ function CompleteScreen({
       </div>
 
       <SetTable playerNames={playerNames} profile={profile} sets={sets} full title="Set by set" />
+
+      <MomentumChart history={history} finalState={match} />
 
       <div className="match-stats">
         <div className="section-row">
@@ -1964,7 +2152,9 @@ function HighlightsScreen({
   profile,
   onAction,
   onAwardXp,
-  onFilter
+  onFilter,
+  clips,
+  soundEnabled
 }: {
   activeFilter: string;
   currentMatch: MatchState;
@@ -1974,17 +2164,50 @@ function HighlightsScreen({
   onAction: (message: string) => void;
   onAwardXp: (id: string, reward: EngagementReward) => Promise<boolean>;
   onFilter: (filter: string) => void;
+  clips: HighlightClip[];
+  soundEnabled: boolean;
 }) {
+  const [displayMode, setDisplayMode] = useState<"cards" | "clips">("cards");
+  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
+  const [selectedClip, setSelectedClip] = useState<HighlightClip | null>(null);
   const [shareCard, setShareCard] = useState("");
-  const matchFilterOptions = useMemo(() => getMatchFilterOptions(matchRecords), [matchRecords]);
-  const currentFilter = matchFilterOptions.some((option) => option.id === activeFilter) ? activeFilter : "All";
-  const filteredRecords = useMemo(() => {
-    return matchRecords.filter((record) => recordMatchesFilter(record, currentFilter));
-  }, [currentFilter, matchRecords]);
-  const shareRecord = matchRecords[0] ?? createUnsavedMatchPreview(currentMatch);
+  const [theme, setTheme] = useState<"classic" | "neon" | "retro" | "cyberpunk" | "vintage">("classic");
+  const [ratio, setRatio] = useState<"1:1" | "9:16">("1:1");
+  const [showStats, setShowStats] = useState(true);
+  const [showSets, setShowSets] = useState(true);
+  const [showCourt, setShowCourt] = useState(true);
+  const [commentaryStyle, setCommentaryStyle] = useState<"none" | "dramatic" | "professional" | "cocky" | "epic">("professional");
+  const [sticker, setSticker] = useState<"none" | "winner" | "ace" | "matchpoint" | "unbeatable">("none");
+  const [isAnimated, setIsAnimated] = useState(true);
+  const [shareRecord, setShareRecord] = useState<MatchRecord>(() => matchRecords[0] ?? createUnsavedMatchPreview(currentMatch));
+
+  useEffect(() => {
+    setShareRecord(matchRecords[0] ?? createUnsavedMatchPreview(currentMatch));
+  }, [matchRecords, currentMatch]);
+
+  useEffect(() => {
+    if (shareCard) {
+      const card = createShareCardSvg(profile, shareRecord, theme, ratio, {
+        showStats,
+        showSets,
+        showCourt,
+        commentaryStyle,
+        sticker,
+        isAnimated
+      });
+      setShareCard(card);
+    }
+  }, [theme, ratio, showStats, showSets, showCourt, commentaryStyle, sticker, isAnimated]);
 
   function generateShareCard() {
-    const card = createShareCardSvg(profile, shareRecord);
+    const card = createShareCardSvg(profile, shareRecord, theme, ratio, {
+      showStats,
+      showSets,
+      showCourt,
+      commentaryStyle,
+      sticker,
+      isAnimated
+    });
     setShareCard(card);
     onAction("Share card generated");
     onAwardXp(`share-card:${shareRecord.id}`, createEngagementReward("shareCard", 30, "Created match card"));
@@ -1995,73 +2218,239 @@ function HighlightsScreen({
     await onAwardXp(`share-post:${shareRecord.id}`, createEngagementReward("sharePost", 40, "Shared match card"));
   }
 
+  const matchFilterOptions = useMemo(() => {
+    if (displayMode === "cards") {
+      return getMatchFilterOptions(matchRecords);
+    } else {
+      const options = [
+        { id: "All", label: "All" },
+        { id: "Ace", label: "Aces" },
+        { id: "Rally", label: "Rallies" },
+        { id: "Winner", label: "Winners" },
+        { id: "Match Point", label: "Match Points" }
+      ];
+      return options.map((option) => ({
+        ...option,
+        count: clips.filter((c) => option.id === "All" || c.tag === option.id).length
+      }));
+    }
+  }, [displayMode, matchRecords, clips]);
+
+  const currentFilter = matchFilterOptions.some((option) => option.id === activeFilter) ? activeFilter : "All";
+
+  const filteredRecords = useMemo(() => {
+    return matchRecords.filter((record) => recordMatchesFilter(record, currentFilter));
+  }, [currentFilter, matchRecords]);
+
+  const filteredClips = useMemo(() => {
+    return clips.filter((c) => currentFilter === "All" || c.tag === currentFilter);
+  }, [currentFilter, clips]);
+
   return (
     <section className="screen content highlights-screen">
       <header className="simple-header">
-        <h1>Match Cards</h1>
-        <p>Saved matches and share cards from real scoring data.</p>
+        <h1>Highlights & Cards</h1>
+        <p>Saved matches, shareable posters, and points highlights.</p>
       </header>
-      <article className="feature-card match-card-hero">
-        <div className="match-card-hero-copy">
-          <p className="eyebrow">Share your match</p>
-          <h2>Create a match card.</h2>
-          <p>{shareRecord.finalScore === "In progress" ? "Score a match first, or generate a draft from the current board." : shareRecord.finalScore}</p>
-        </div>
-        <div className="share-preview match-card-hero-preview">
-          <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
-          <span>vs</span>
-          <Portrait className={opponent.portrait} initials={getInitials(shareRecord.players[1])} />
-        </div>
-        <button className="match-card-hero-button" onClick={generateShareCard}>Generate Share Card <ArrowRight size={17} /></button>
-      </article>
-      {shareCard && (
-        <article className="generated-share-card">
-          <div className="section-row">
-            <h2>Share card ready</h2>
-            <button className="text-button" onClick={() => setShareCard("")}>Close</button>
-          </div>
-          <img alt="Generated AceTrack match share card" src={shareCard} />
-          <div className="button-pair">
-            <a className="ghost-button" download="acetrack-share-card.svg" href={shareCard}><Download size={18} /> Download</a>
-            <button className="hero-action compact" onClick={shareGeneratedCard}><Share2 size={18} /> Share Card</button>
-          </div>
-        </article>
-      )}
-      <div className="section-row">
-        <h2>Saved Matches</h2>
-        <button className="text-button" onClick={() => onAction(matchRecordsStatus)}>Status</button>
-      </div>
-      <div className="filter-row">
-        {matchFilterOptions.map((filter) => (
-          <button className={filter.id === currentFilter ? "active" : ""} key={filter.id} onClick={() => onFilter(filter.id)}>
-            {filter.label}<span>{filter.count}</span>
+
+      <div className="highlights-main-content">
+        <div className="tabs highlights-tabs">
+          <button className={displayMode === "cards" ? "active" : ""} onClick={() => { setDisplayMode("cards"); onFilter("All"); setShareCard(""); }}>
+            Match Cards
           </button>
-        ))}
-      </div>
-      <div className="highlight-grid">
-        {filteredRecords.map((record) => (
-          <article className="highlight-card real-match-card" key={record.id}>
-            <div className="thumb lime">
-              <span><Trophy size={16} /> {record.durationLabel}</span>
-              <b>{record.winner ? "Saved" : "Open"}</b>
+          <button className={displayMode === "clips" ? "active" : ""} onClick={() => { setDisplayMode("clips"); onFilter("All"); setShareCard(""); }}>
+            Replay Clips {clips.length > 0 && <span className="badge">{clips.length}</span>}
+          </button>
+        </div>
+
+        {displayMode === "cards" && !shareCard && (
+          <article className="feature-card match-card-hero">
+            <div className="match-card-hero-copy">
+              <p className="eyebrow">Share your match</p>
+              <h2>Create a match card.</h2>
+              <p>{shareRecord.finalScore === "In progress" ? "Score a match first, or generate a draft from the current board." : shareRecord.finalScore}</p>
             </div>
-            <div>
-              <h3>{record.players[0]} vs {record.players[1]}</h3>
-              <p>{record.finalScore} · {formatMatchDate(record.createdAt)}</p>
+            <div className="share-preview match-card-hero-preview">
+              <Portrait className={profile.portrait} initials={profile.avatar} photoDataUrl={profile.photoDataUrl} />
+              <span>vs</span>
+              <Portrait className={opponent.portrait} initials={getInitials(shareRecord.players[1])} />
             </div>
-            <div className="card-icons">
-              <button aria-label={`Share ${record.players[0]} vs ${record.players[1]}`} onClick={() => { setShareCard(createShareCardSvg(profile, record)); onAction("Share card generated"); onAwardXp(`share-card:${record.id}`, createEngagementReward("shareCard", 30, "Created match card")); }}><Share2 size={18} /></button>
+            <button className="match-card-hero-button" onClick={generateShareCard}>Generate Share Card <ArrowRight size={17} /></button>
+          </article>
+        )}
+
+        {shareCard && displayMode === "cards" && (
+          <article className="generated-share-card">
+            <div className="section-row">
+              <h2>Customize share card</h2>
+              <button className="text-button" onClick={() => setShareCard("")}>Close</button>
+            </div>
+
+            <div className="share-card-customizer">
+              <div className="customizer-group">
+                <span className="group-label">Theme:</span>
+                <div className="pill-buttons">
+                  <button className={theme === "classic" ? "active" : ""} onClick={() => setTheme("classic")}>Classic</button>
+                  <button className={theme === "neon" ? "active" : ""} onClick={() => setTheme("neon")}>Neon</button>
+                  <button className={theme === "retro" ? "active" : ""} onClick={() => setTheme("retro")}>Retro</button>
+                  <button className={theme === "cyberpunk" ? "active" : ""} onClick={() => setTheme("cyberpunk")}>Cyberpunk</button>
+                  <button className={theme === "vintage" ? "active" : ""} onClick={() => setTheme("vintage")}>Vintage</button>
+                </div>
+              </div>
+              <div className="customizer-group">
+                <span className="group-label">Size:</span>
+                <div className="pill-buttons">
+                  <button className={ratio === "1:1" ? "active" : ""} onClick={() => setRatio("1:1")}>1:1 Post</button>
+                  <button className={ratio === "9:16" ? "active" : ""} onClick={() => setRatio("9:16")}>9:16 Story</button>
+                </div>
+              </div>
+              <div className="customizer-group">
+                <span className="group-label">Analytics:</span>
+                <div className="pill-buttons">
+                  <button className={showSets ? "active" : ""} onClick={() => setShowSets(!showSets)}>Set Scores</button>
+                  <button className={showStats ? "active" : ""} onClick={() => setShowStats(!showStats)}>Match Stats</button>
+                  <button className={showCourt ? "active" : ""} onClick={() => setShowCourt(!showCourt)}>Shot Tracker</button>
+                </div>
+              </div>
+              <div className="customizer-group">
+                <span className="group-label">AI Coach Tone:</span>
+                <div className="pill-buttons">
+                  <button className={commentaryStyle === "none" ? "active" : ""} onClick={() => setCommentaryStyle("none")}>None</button>
+                  <button className={commentaryStyle === "professional" ? "active" : ""} onClick={() => setCommentaryStyle("professional")}>Pro Coach</button>
+                  <button className={commentaryStyle === "dramatic" ? "active" : ""} onClick={() => setCommentaryStyle("dramatic")}>Dramatic</button>
+                  <button className={commentaryStyle === "cocky" ? "active" : ""} onClick={() => setCommentaryStyle("cocky")}>Cocky</button>
+                  <button className={commentaryStyle === "epic" ? "active" : ""} onClick={() => setCommentaryStyle("epic")}>Epic</button>
+                </div>
+              </div>
+              <div className="customizer-group">
+                <span className="group-label">Overlay Sticker:</span>
+                <div className="pill-buttons">
+                  <button className={sticker === "none" ? "active" : ""} onClick={() => setSticker("none")}>None</button>
+                  <button className={sticker === "winner" ? "active" : ""} onClick={() => setSticker("winner")}>Champion</button>
+                  <button className={sticker === "ace" ? "active" : ""} onClick={() => setSticker("ace")}>Ace King</button>
+                  <button className={sticker === "matchpoint" ? "active" : ""} onClick={() => setSticker("matchpoint")}>Match Point</button>
+                  <button className={sticker === "unbeatable" ? "active" : ""} onClick={() => setSticker("unbeatable")}>Unbeatable</button>
+                </div>
+              </div>
+              <div className="customizer-group">
+                <span className="group-label">Animations:</span>
+                <div className="pill-buttons">
+                  <button className={isAnimated ? "active" : ""} onClick={() => setIsAnimated(true)}>Enabled</button>
+                  <button className={!isAnimated ? "active" : ""} onClick={() => setIsAnimated(false)}>Disabled</button>
+                </div>
+              </div>
+            </div>
+
+            <div className={`share-img-preview ${ratio === '9:16' ? 'is-story' : ''}`}>
+              <img alt="Generated AceTrack match share card" src={shareCard} />
+            </div>
+            
+            <div className="button-pair">
+              <a className="ghost-button" download={`acetrack-${theme}-${ratio.replace(':','x')}.svg`} href={shareCard}>
+                <Download size={18} /> Download
+              </a>
+              <button className="hero-action compact" onClick={shareGeneratedCard}>
+                <Share2 size={18} /> Share Card
+              </button>
             </div>
           </article>
-        ))}
-        {!filteredRecords.length && (
-          <EmptyState
-            icon={Video}
-            message={matchRecordsStatus}
-            title="No saved match cards yet"
-          />
+        )}
+
+        <div className="section-row">
+          <h2>{displayMode === "cards" ? "Saved Matches" : "Points Replays"}</h2>
+          <button className="text-button" onClick={() => onAction(displayMode === "cards" ? matchRecordsStatus : `${clips.length} highlight clips saved`)}>Status</button>
+        </div>
+
+        <div className="filter-row">
+          {matchFilterOptions.map((filter) => (
+            <button className={filter.id === currentFilter ? "active" : ""} key={filter.id} onClick={() => onFilter(filter.id)}>
+              {filter.label}<span>{filter.count}</span>
+            </button>
+          ))}
+        </div>
+
+        {displayMode === "cards" ? (
+          <div className="highlight-grid">
+            {filteredRecords.map((record) => {
+              const isExpanded = expandedRecordId === record.id;
+              return (
+                <article className="highlight-card real-match-card" key={record.id}>
+                  <div className="match-card-header-tap" onClick={() => setExpandedRecordId(isExpanded ? null : record.id)}>
+                    <div className="thumb lime">
+                      <span><Trophy size={16} /> {record.durationLabel}</span>
+                      <b>{record.winner ? "Saved" : "Open"}</b>
+                    </div>
+                    <div className="match-card-core-info">
+                      <h3>{record.players[0]} vs {record.players[1]}</h3>
+                      <p>{record.finalScore} · {formatMatchDate(record.createdAt)}</p>
+                      <span className="expand-hint">{isExpanded ? "Hide details ▲" : "Tap to expand ▼"}</span>
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="match-card-expansion">
+                      <SetTable playerNames={record.players} profile={profile} sets={record.sets} full title="Set scores" />
+                      <MomentumChart history={record.scoringState.history} finalState={record.scoringState} />
+                      <div className="expansion-actions">
+                        <button className="hero-action compact" onClick={() => { setShareRecord(record); generateShareCard(); }}>
+                          <Share2 size={16} /> Customize Poster
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+            {!filteredRecords.length && (
+              <EmptyState
+                icon={Video}
+                message={matchRecordsStatus}
+                title="No saved matches yet"
+              />
+            )}
+          </div>
+        ) : (
+          <div className="highlight-grid clips-grid">
+            {filteredClips.map((clip) => (
+              <article className="highlight-card clip-card" key={clip.id} onClick={() => setSelectedClip(clip)}>
+                <div className="thumb clip-thumb">
+                  <svg viewBox="0 0 120 60" className="mini-court-preview">
+                    <rect x="5" y="5" width="110" height="50" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="1" />
+                    <line x1="60" y1="5" x2="60" y2="55" stroke="rgba(255,255,255,0.5)" strokeWidth="1" />
+                    <path
+                      d={`M ${clip.trajectory.startX / 2.6},${clip.trajectory.startY / 2.6} Q ${(clip.trajectory.startX + clip.trajectory.endX)/5.2},${Math.min(clip.trajectory.startY, clip.trajectory.endY)/2.6 - 10} ${clip.trajectory.endX / 2.6},${clip.trajectory.endY / 2.6}`}
+                      fill="none"
+                      stroke="#cdea5f"
+                      strokeWidth="1.5"
+                    />
+                  </svg>
+                  <span className="clip-play-badge"><Play size={12} fill="#1e2b11" /> {clip.duration}</span>
+                </div>
+                <div className="clip-card-info">
+                  <span className="clip-tag">{clip.tag}</span>
+                  <h3>{clip.title}</h3>
+                  <p>{clip.pointInfo} · {formatMatchDate(clip.createdAt)}</p>
+                </div>
+              </article>
+            ))}
+            {!filteredClips.length && (
+              <EmptyState
+                icon={Camera}
+                message="Clip moments during live matches (Aces or Winners) to see them here."
+                title="No clips found"
+              />
+            )}
+          </div>
         )}
       </div>
+
+      {selectedClip && (
+        <HighlightVideoSimulator
+          clip={selectedClip}
+          onClose={() => setSelectedClip(null)}
+          soundEnabled={soundEnabled}
+        />
+      )}
     </section>
   );
 }
@@ -2074,7 +2463,8 @@ function SocialScreen({
   onAwardXp,
   onStartChallenge,
   onSocialChanged,
-  onTab
+  onTab,
+  onReceiveLocalPoke
 }: {
   activeTab: string;
   appUser?: AppUser;
@@ -2084,6 +2474,7 @@ function SocialScreen({
   onStartChallenge: (playerName: string, playerId?: string) => void;
   onSocialChanged: () => void;
   onTab: (tab: string) => void;
+  onReceiveLocalPoke: (action: SocialAction) => void;
 }) {
   const [nearbyStatus, setNearbyStatus] = useState("Share GPS to find friends nearby");
   const [nearbyList, setNearbyList] = useState<NearbyPlayer[]>([]);
@@ -2389,6 +2780,32 @@ function SocialScreen({
   const requestCount = friendRequests.length + sentFriendRequests.length + socialActions.length;
   const inviteLink = getFriendInviteUrl(profile, currentUserId);
 
+  const userPoints = getPointsFromRating(profile.rating) || profile.xp || 1200;
+  const userAsNearby: NearbyPlayer = {
+    id: currentUserId || "you",
+    avatar: profile.avatar,
+    name: `${profile.name} (You)`,
+    level: profile.level,
+    points: userPoints,
+    portrait: profile.portrait,
+    rating: profile.rating,
+    distance: "0 km",
+    distanceKm: 0,
+    distanceMiles: 0,
+    streak: 3,
+    rank: 1
+  };
+
+  const combinedLadderPlayers = [userAsNearby, ...nearbyList]
+    .reduce<NearbyPlayer[]>((acc, player) => {
+      if (acc.some((p) => p.id === player.id || (player.id === "you" && p.id === currentUserId))) return acc;
+      return [...acc, player];
+    }, [])
+    .sort((a, b) => b.points - a.points)
+    .map((player, index) => ({ ...player, rank: index + 1 }));
+
+  const userRank = combinedLadderPlayers.find((p) => p.id === (currentUserId || "you"))?.rank || 1;
+
   function updateRadius(value: number) {
     setRadiusKm(Math.max(1, Math.min(250, Math.round(value) || 1)));
   }
@@ -2579,9 +2996,26 @@ function SocialScreen({
 
   async function pokePlayer(player: SocialProfileSnapshot, playerId: string) {
     const activeUser = appUser ?? await getCurrentAppUser();
-    await sendSocialAction("poke", activeUser.id, profile, playerId, player);
+    const result = await sendSocialAction("poke", activeUser.id, profile, playerId, player);
     onAction(`Poked ${player.name}`);
     onSocialChanged();
+
+    if (result.mode === "local") {
+      window.setTimeout(() => {
+        const mockPoke: SocialAction = {
+          id: crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+          fromProfile: player,
+          fromUserId: playerId,
+          status: "pending",
+          toProfile: toSocialProfile(profile),
+          toUserId: activeUser.id,
+          type: "poke",
+          updatedAt: new Date().toISOString()
+        };
+        onReceiveLocalPoke(mockPoke);
+      }, 2500);
+    }
   }
 
   async function acceptRequest(request: FriendRequest) {
@@ -2921,13 +3355,37 @@ function SocialScreen({
           </div>
         </aside>
       )}
-      <p className="list-label">Local ladder</p>
-      <article className="ladder-card">
-        <div><span>Your Rank</span><strong>-- <small>of --</small></strong><b>{profile.rating}</b></div>
-        <div className="ladder-steps">
-          {["Rising Ace", "Court Challenger", "Match Master", "Local Legend"].map((step, index) => (
-            <span className={index === 1 ? "active" : ""} key={step}><Trophy size={20} />{step}</span>
-          ))}
+      <p className="list-label">Local ladder rankings</p>
+      <article className="ladder-card interactive-ladder">
+        <div className="ladder-rank-summary">
+          <div><span>Your Rank</span><strong>#{userRank} <small>of {combinedLadderPlayers.length}</small></strong></div>
+          <div className="ladder-steps">
+            {["Rising Ace", "Court Challenger", "Match Master", "Local Legend"].map((step, index) => {
+              const isActive = userRank <= 3 ? index === 3 : userRank <= 6 ? index === 2 : userRank <= 9 ? index === 1 : index === 0;
+              return (
+                <span className={isActive ? "active" : ""} key={step}>
+                  <Trophy size={16} />{step}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+        <div className="ladder-rows">
+          {combinedLadderPlayers.slice(0, 10).map((player) => {
+            const isMe = player.id === (currentUserId || "you");
+            return (
+              <div key={player.id} className={isMe ? "ladder-row is-user" : "ladder-row"}>
+                <span className="ladder-rank">#{player.rank}</span>
+                <Portrait className={player.portrait} initials={player.avatar} />
+                <span className="ladder-name">
+                  <strong>{player.name}</strong>
+                  <small>{player.distance === "0 km" ? "Home court" : `${player.distance} away`}</small>
+                </span>
+                <span className="ladder-level">Lvl {player.level}</span>
+                <span className="ladder-points">{player.points.toLocaleString()} PTS</span>
+              </div>
+            );
+          })}
         </div>
       </article>
     </section>
@@ -3203,6 +3661,7 @@ function ProfileScreen({
           <h2>Skills</h2>
           <button className="text-button" onClick={() => setIsEditing(true)}>Edit</button>
         </div>
+        <SkillsRadarChart skills={profile.skills} proSkills={comparisonPro?.skills || Array(6).fill(50)} />
         <div className="skill-list">
           {profile.skills.map(([skill, value]) => (
             <div className="skill" key={skill}>
@@ -4108,6 +4567,20 @@ function playUiSound(kind: "end" | "opponent" | "point" | "start" | "tap" | "und
   if (!enabled) return;
 
   try {
+    if (kind === "point" || kind === "opponent") {
+      playRacketHit();
+      return;
+    }
+    if (kind === "start") {
+      playAceChime();
+      return;
+    }
+    if (kind === "end") {
+      playCrowdCheer();
+      return;
+    }
+
+    // Fast, simple feedback for tap / undo
     const AudioContextConstructor = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextConstructor) return;
 
@@ -4123,7 +4596,7 @@ function playUiSound(kind: "end" | "opponent" | "point" | "start" | "tap" | "und
       undo: 260
     };
 
-    oscillator.type = kind === "point" || kind === "start" ? "sine" : "triangle";
+    oscillator.type = "sine";
     oscillator.frequency.value = frequencies[kind];
     gain.gain.setValueAtTime(0.0001, audioContext.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.12, audioContext.currentTime + 0.015);
@@ -4135,6 +4608,99 @@ function playUiSound(kind: "end" | "opponent" | "point" | "start" | "tap" | "und
   } catch {
     // Sound is a progressive enhancement.
   }
+}
+
+function announceScore(next: MatchState, players: [string, string], tag: PointTag, scorer: 0 | 1, enabled: boolean, isCorrection: boolean = false) {
+  if (!enabled || typeof window === "undefined" || !window.speechSynthesis) return;
+
+  // Cancel any ongoing speech so the umpire announces immediately
+  window.speechSynthesis.cancel();
+
+  let announcement = "";
+
+  if (isCorrection) {
+    announcement += "Correction. ";
+  }
+
+  // 1. Prefix with special events if tagged (only if not correction)
+  if (!isCorrection) {
+    if (tag.acePlayer !== undefined) {
+      announcement += "Ace! ";
+    } else if (tag.winnerPlayer !== undefined) {
+      announcement += "Winner! ";
+    }
+  }
+
+  // 2. Determine game/set/match status
+  if (next.winner !== undefined) {
+    const winnerName = players[next.winner];
+    announcement += `Game, set, and match, ${winnerName}.`;
+  } else if (next.sets[next.sets.length - 1].winner !== undefined) {
+    const setWinnerIndex = next.sets[next.sets.length - 1].winner;
+    const winnerName = players[setWinnerIndex!];
+    const setNum = next.sets.length;
+    const setWord = setNum === 1 ? "first" : setNum === 2 ? "second" : "third";
+    announcement += `Game and ${setWord} set, ${winnerName}.`;
+  } else if (next.pointScore[0] === 0 && next.pointScore[1] === 0) {
+    // Game was just completed
+    const activeSet = next.sets[next.sets.length - 1];
+    const games = activeSet.games;
+    announcement += `Game, ${players[scorer]}. `;
+    announcement += `The score is ${games[0]} games to ${games[1]}.`;
+  } else {
+    // Normal score within a game
+    const activeSet = next.sets[next.sets.length - 1];
+    if (activeSet.tiebreak) {
+      const tbPoints = next.pointScore;
+      announcement += `${tbPoints[0]} - ${tbPoints[1]}.`;
+    } else {
+      const getPointsWord = (pts: number) => {
+        if (pts === 0) return "Love";
+        if (pts === 1) return "15";
+        if (pts === 2) return "30";
+        if (pts === 3) return "40";
+        return "";
+      };
+      
+      const p1 = next.pointScore[0];
+      const p2 = next.pointScore[1];
+      
+      if (p1 === 3 && p2 === 3) {
+        announcement += "Deuce.";
+      } else if (p1 > 3 || p2 > 3) {
+        if (p1 === p2) {
+          announcement += "Deuce.";
+        } else {
+          const advIndex = p1 > p2 ? 0 : 1;
+          announcement += `Advantage, ${players[advIndex]}.`;
+        }
+      } else {
+        const w1 = getPointsWord(p1);
+        const w2 = getPointsWord(p2);
+        if (p1 === p2) {
+          announcement += `${w1} all.`;
+        } else {
+          announcement += `${w1} - ${w2}.`;
+        }
+      }
+    }
+  }
+
+  // Speak using SpeechSynthesis
+  const utterance = new SpeechSynthesisUtterance(announcement);
+  const voices = window.speechSynthesis.getVoices();
+  const preferredVoice = voices.find(v => 
+    v.lang.startsWith("en") && 
+    (v.name.includes("Google") || v.name.includes("Natural") || v.name.includes("Samantha"))
+  );
+  if (preferredVoice) {
+    utterance.voice = preferredVoice;
+  }
+  
+  utterance.rate = 0.95;
+  utterance.pitch = 0.92; // Authoritative chair umpire tone
+  
+  window.speechSynthesis.speak(utterance);
 }
 
 function getCurrentPosition(): Promise<GeolocationPosition> {
@@ -5209,7 +5775,20 @@ function normalizeProfileDraft(profile: UserProfile): UserProfile {
   };
 }
 
-function createShareCardSvg(profile: UserProfile, record: MatchRecord) {
+function createShareCardSvg(
+  profile: UserProfile,
+  record: MatchRecord,
+  theme: "classic" | "neon" | "retro" | "cyberpunk" | "vintage" = "classic",
+  ratio: "1:1" | "9:16" = "1:1",
+  options: {
+    showStats?: boolean;
+    showSets?: boolean;
+    showCourt?: boolean;
+    commentaryStyle?: "none" | "dramatic" | "professional" | "cocky" | "epic";
+    sticker?: "none" | "winner" | "ace" | "matchpoint" | "unbeatable";
+    isAnimated?: boolean;
+  } = {}
+) {
   const safeName = escapeSvg(record.players[0]);
   const safeOpponent = escapeSvg(record.players[1]);
   const safeRating = escapeSvg(profile.rating);
@@ -5219,42 +5798,426 @@ function createShareCardSvg(profile: UserProfile, record: MatchRecord) {
   const safeFinalScore = escapeSvg(record.finalScore);
   const safeWinner = escapeSvg(record.winner || "Saved match");
 
+  const width = 1080;
+  const height = ratio === "1:1" ? 1080 : 1920;
+
+  let bgFill = "";
+  let textTitleColor = "";
+  let textSubColor = "";
+  let brandColor = "";
+  let cardBgFill = "";
+  let winnerBg = "";
+  let winnerText = "";
+  let courtLinesColor = "";
+  let fontStack = "Inter, Arial, sans-serif";
+  let borderStroke = "none";
+
+  if (theme === "classic") {
+    bgFill = `url(#bg-classic)`;
+    textTitleColor = "#161b16";
+    textSubColor = "#697365";
+    brandColor = "#9fc63a";
+    cardBgFill = "rgba(255,255,255,0.88)";
+    winnerBg = "#cdea5f";
+    winnerText = "#1e2b11";
+    courtLinesColor = "#9fc63a";
+  } else if (theme === "neon") {
+    bgFill = "#0c0e0c";
+    textTitleColor = "#ffffff";
+    textSubColor = "#939a8f";
+    brandColor = "#cdea5f";
+    cardBgFill = "#151a15";
+    winnerBg = "#cdea5f";
+    winnerText = "#0c0e0c";
+    courtLinesColor = "rgba(205, 234, 95, 0.22)";
+  } else if (theme === "retro") {
+    bgFill = "#f3efe3";
+    textTitleColor = "#4d3a2e";
+    textSubColor = "#8c7b70";
+    brandColor = "#d66840";
+    cardBgFill = "#fbfaf7";
+    winnerBg = "#d66840";
+    winnerText = "#ffffff";
+    courtLinesColor = "rgba(214, 104, 64, 0.22)";
+    fontStack = "Georgia, 'Times New Roman', serif";
+  } else if (theme === "cyberpunk") {
+    bgFill = "#0a0518";
+    textTitleColor = "#00ffff";
+    textSubColor = "#bd93f9";
+    brandColor = "#ff007f";
+    cardBgFill = "#130924";
+    winnerBg = "#ff007f";
+    winnerText = "#0a0518";
+    courtLinesColor = "rgba(0, 255, 255, 0.25)";
+    fontStack = "'Courier New', Courier, monospace";
+    borderStroke = "rgba(255, 0, 127, 0.4)";
+  } else if (theme === "vintage") {
+    bgFill = "#faf7f0";
+    textTitleColor = "#1a302a";
+    textSubColor = "#5a6e67";
+    brandColor = "#c59d4c";
+    cardBgFill = "#ffffff";
+    winnerBg = "#1a302a";
+    winnerText = "#faf7f0";
+    courtLinesColor = "rgba(197, 157, 76, 0.3)";
+    fontStack = "'Times New Roman', Times, serif";
+    borderStroke = "#c59d4c";
+  }
+
+  const offset = ratio === "9:16" ? 300 : 0;
+  const cardY = 320 + offset;
+  const cardHeight = ratio === "1:1" ? 580 : 1080;
+  const scoreY = cardY + cardHeight + 60;
+  const winnerBadgeY = scoreY + 6;
+  const footerY = height - 60;
+
+  // AI Commentary Selection
+  let commentaryText = "";
+  if (options.commentaryStyle && options.commentaryStyle !== "none") {
+    const winnerName = record.winner ? record.winner : record.players[0];
+    const opponentName = record.players[0] === winnerName ? record.players[1] : record.players[0];
+    const acesCount = (record.stats?.aces?.[0] || 0) + (record.stats?.aces?.[1] || 0);
+    const winnersCount = (record.stats?.winners?.[0] || 0) + (record.stats?.winners?.[1] || 0);
+
+    if (options.commentaryStyle === "professional") {
+      commentaryText = `AI COACH: ${winnerName} displayed superior baseline strategy. Service reliability and ${winnersCount} total winners secured tactical dominance over ${opponentName}.`;
+    } else if (options.commentaryStyle === "dramatic") {
+      commentaryText = `AI COACH: A breathtaking thriller! Under immense court pressure, ${winnerName} clutches a hard-fought victory against ${opponentName} in a memorable rally match.`;
+    } else if (options.commentaryStyle === "cocky") {
+      commentaryText = `AI COACH: Baseline clinic! ${winnerName} dictates the pace entirely, leaving ${opponentName} scrambling for answers in every single set.`;
+    } else if (options.commentaryStyle === "epic") {
+      commentaryText = `AI COACH: Written in the stars! ${winnerName} conquered the arena with ${acesCount} aces, putting on a legendary performance to seal a historic win.`;
+    }
+  }
+
+  // Text wrapper helper
+  const wrapText = (text: string, maxChars = 44): string[] => {
+    const words = text.split(" ");
+    const lines: string[] = [];
+    let currentLine = "";
+    for (const word of words) {
+      if ((currentLine + word).length > maxChars) {
+        lines.push(currentLine.trim());
+        currentLine = word + " ";
+      } else {
+        currentLine += word + " ";
+      }
+    }
+    if (currentLine) lines.push(currentLine.trim());
+    return lines;
+  };
+  const wrappedCommentary = wrapText(commentaryText);
+
+  // Generate Tennis Court Map
+  let courtMapSvg = "";
+  if (options.showCourt) {
+    const courtW = 340;
+    const courtH = 170;
+    
+    // Seeded random for ball placement
+    let seedVal = 100;
+    const seededRandom = () => {
+      const x = Math.sin(seedVal++) * 10000;
+      return x - Math.floor(x);
+    };
+
+    const numAces = (record.stats?.aces?.[0] || 0) + (record.stats?.aces?.[1] || 0) || 3;
+    const numWinners = (record.stats?.winners?.[0] || 0) + (record.stats?.winners?.[1] || 0) || 5;
+
+    let marksSvg = "";
+    // Draw Aces (Yellow dots + stars)
+    for (let i = 0; i < numAces; i++) {
+      const isPlayer1 = seededRandom() > 0.5;
+      const x = isPlayer1 ? 20 + seededRandom() * 40 : courtW - 60 + seededRandom() * 40;
+      const y = seededRandom() > 0.5 ? 15 + seededRandom() * 20 : courtH - 35 + seededRandom() * 20;
+      marksSvg += `
+        <g class="anim-flash">
+          <circle cx="${x}" cy="${y}" r="6" fill="#ffe066" stroke="#cc9900" stroke-width="1.5"/>
+          <path d="M${x-3} ${y-3} L${x+3} ${y+3} M${x+3} ${y-3} L${x-3} ${y+3}" stroke="#ffffff" stroke-width="1"/>
+        </g>`;
+    }
+    // Draw Winners (Green stars)
+    for (let i = 0; i < numWinners; i++) {
+      const isPlayer1 = seededRandom() > 0.5;
+      const x = isPlayer1 ? 40 + seededRandom() * 60 : courtW - 100 + seededRandom() * 60;
+      const y = 20 + seededRandom() * (courtH - 40);
+      marksSvg += `
+        <circle cx="${x}" cy="${y}" r="5.5" fill="${theme === 'retro' || theme === 'vintage' ? '#d66840' : '#cdea5f'}" stroke="#1e2b11" stroke-width="1.2" class="anim-bounce"/>`;
+    }
+
+    courtMapSvg = `
+      <g>
+        <rect width="${courtW}" height="${courtH}" fill="none" stroke="${courtLinesColor}" stroke-width="3" rx="4"/>
+        <line x1="${courtW/2}" y1="0" x2="${courtW/2}" y2="${courtH}" stroke="${courtLinesColor}" stroke-width="3" stroke-dasharray="3,3"/>
+        <rect x="50" y="20" width="${courtW - 100}" height="${courtH - 40}" fill="none" stroke="${courtLinesColor}" stroke-width="2"/>
+        <line x1="50" y1="${courtH/2}" x2="${courtW - 50}" y2="${courtH/2}" stroke="${courtLinesColor}" stroke-width="2"/>
+        <line x1="${courtW/2}" y1="20" x2="${courtW/2}" y2="${courtH - 20}" stroke="${courtLinesColor}" stroke-width="2"/>
+        ${marksSvg}
+      </g>
+    `;
+  }
+
+  // Dynamic Stickers
+  let stickerSvg = "";
+  if (options.sticker && options.sticker !== "none") {
+    let stickerText = "";
+    let stickerFill = "";
+    let stickerStroke = "";
+    let stickerTextColor = "";
+    
+    if (options.sticker === "winner") {
+      stickerText = "CHAMPION";
+      stickerFill = "#ffe066";
+      stickerStroke = "#cc9900";
+      stickerTextColor = "#1e2b11";
+    } else if (options.sticker === "ace") {
+      stickerText = "ACE KING";
+      stickerFill = "#cdea5f";
+      stickerStroke = "#536b16";
+      stickerTextColor = "#1e2b11";
+    } else if (options.sticker === "matchpoint") {
+      stickerText = "MATCH POINT";
+      stickerFill = "#ff007f";
+      stickerStroke = "#ffffff";
+      stickerTextColor = "#ffffff";
+    } else if (options.sticker === "unbeatable") {
+      stickerText = "UNBEATABLE";
+      stickerFill = "#161b16";
+      stickerStroke = "#9fc63a";
+      stickerTextColor = "#9fc63a";
+    }
+
+    stickerSvg = `
+      <g transform="translate(860, ${cardY - 50}) rotate(15)" class="anim-sticker">
+        <polygon points="0,-40 10,-10 40,-10 15,10 25,40 0,20 -25,40 -15,10 -40,-10 -10,-10" fill="${stickerFill}" stroke="${stickerStroke}" stroke-width="3"/>
+        <circle cx="0" cy="0" r="32" fill="${stickerFill}" stroke="${stickerStroke}" stroke-width="2"/>
+        <text x="0" y="6" fill="${stickerTextColor}" font-family="${fontStack}" font-size="10" font-weight="900" text-anchor="middle" letter-spacing="1">${stickerText}</text>
+      </g>
+    `;
+  }
+
+  // Animation Styles
+  const animationStyles = options.isAnimated ? `
+    <style>
+      @keyframes floatBall {
+        0%, 100% { transform: translateY(0px) rotate(0deg); }
+        50% { transform: translateY(-8px) rotate(5deg); }
+      }
+      @keyframes pulseAura {
+        0%, 100% { opacity: 0.2; }
+        50% { opacity: 0.6; }
+      }
+      @keyframes slideBar {
+        from { stroke-dashoffset: 280; }
+        to { stroke-dashoffset: 0; }
+      }
+      @keyframes flashSticker {
+        0%, 100% { transform: translate(860px, ${cardY - 50}px) rotate(15deg) scale(1); }
+        50% { transform: translate(860px, ${cardY - 50}px) rotate(15deg) scale(1.08); }
+      }
+      .anim-ball { animation: floatBall 4s infinite ease-in-out; }
+      .anim-aura { animation: pulseAura 3s infinite ease-in-out; }
+      .anim-bar-val { animation: slideBar 1.5s ease-out forwards; }
+      .anim-sticker { animation: flashSticker 2.5s infinite ease-in-out; }
+      .anim-bounce { animation: floatBall 2s infinite ease-in-out; }
+    </style>
+  ` : "";
+
+  // Comparative Stats Calculations
+  const p1Aces = record.stats?.aces?.[0] || 0;
+  const p2Aces = record.stats?.aces?.[1] || 0;
+  const p1Winners = record.stats?.winners?.[0] || 0;
+  const p2Winners = record.stats?.winners?.[1] || 0;
+  const p1Errors = record.stats?.unforcedErrors?.[0] || 0;
+  const p2Errors = record.stats?.unforcedErrors?.[1] || 0;
+
+  const getPercent = (p1: number, p2: number) => {
+    const total = p1 + p2;
+    if (total === 0) return 50;
+    return Math.round((p1 / total) * 100);
+  };
+
+  const acesPct = getPercent(p1Aces, p2Aces);
+  const winnersPct = getPercent(p1Winners, p2Winners);
+  const errorsPct = getPercent(p1Errors, p2Errors);
+
   const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350" viewBox="0 0 1080 1350">
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="bg-classic" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#fffef8"/>
       <stop offset="62%" stop-color="#f5fad8"/>
       <stop offset="100%" stop-color="#eef8c7"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="28" stdDeviation="28" flood-color="#465337" flood-opacity="0.18"/>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="20" stdDeviation="20" flood-color="#465337" flood-opacity="0.12"/>
     </filter>
   </defs>
-  <rect width="1080" height="1350" rx="72" fill="url(#bg)"/>
-  <path d="M94 960 C330 840 620 820 996 900" stroke="#9fc63a" stroke-opacity="0.28" stroke-width="3" fill="none"/>
-  <path d="M104 1030 L910 820 M168 1110 L980 920 M250 1188 L1030 1006" stroke="#9fc63a" stroke-opacity="0.18" stroke-width="2"/>
-  <text x="92" y="126" fill="#9fc63a" font-family="Inter, Arial" font-size="34" font-weight="800" letter-spacing="8">ACETRACK</text>
-  <text x="92" y="218" fill="#161b16" font-family="Inter, Arial" font-size="78" font-weight="900">Match Card</text>
-  <text x="92" y="282" fill="#697365" font-family="Inter, Arial" font-size="34">${safeLocation}</text>
+  ${animationStyles}
+  <rect width="${width}" height="${height}" rx="${ratio === '1:1' ? '48' : '0'}" fill="${bgFill}"/>
+  
+  <!-- Court Line Overlay Decal -->
+  <path d="M94 ${820 + offset} C330 ${720 + offset} 620 ${700 + offset} 996 ${770 + offset}" stroke="${courtLinesColor}" stroke-opacity="0.25" stroke-width="3" fill="none"/>
+  
+  <text x="92" y="110" fill="${brandColor}" font-family="${fontStack}" font-size="34" font-weight="900" letter-spacing="8">ACETRACK</text>
+  <text x="92" y="196" fill="${textTitleColor}" font-family="${fontStack}" font-size="72" font-weight="900">Match Analytics</text>
+  <text x="92" y="254" fill="${textSubColor}" font-family="${fontStack}" font-size="30">${safeLocation} · ${record.durationLabel}</text>
+  
   <g filter="url(#shadow)">
-    <rect x="92" y="380" width="896" height="472" rx="44" fill="rgba(255,255,255,0.84)"/>
-    <circle cx="310" cy="542" r="92" fill="#eef8c7"/>
-    <text x="310" y="564" fill="#536b16" text-anchor="middle" font-family="Inter, Arial" font-size="48" font-weight="900">${safeInitials}</text>
-    <circle cx="770" cy="542" r="92" fill="#f1f3ea"/>
-    <text x="770" y="564" fill="#697365" text-anchor="middle" font-family="Inter, Arial" font-size="48" font-weight="900">${safeOpponentInitials}</text>
-    <circle cx="540" cy="548" r="44" fill="#fbfde9"/>
-    <text x="540" y="562" fill="#161b16" text-anchor="middle" font-family="Inter, Arial" font-size="28" font-weight="900">VS</text>
-    <text x="310" y="700" fill="#161b16" text-anchor="middle" font-family="Inter, Arial" font-size="42" font-weight="900">${safeName}</text>
-    <text x="310" y="752" fill="#697365" text-anchor="middle" font-family="Inter, Arial" font-size="28">${safeRating}</text>
-    <text x="770" y="700" fill="#161b16" text-anchor="middle" font-family="Inter, Arial" font-size="42" font-weight="900">${safeOpponent}</text>
-    <text x="770" y="752" fill="#697365" text-anchor="middle" font-family="Inter, Arial" font-size="28">Opponent</text>
+    <!-- Main Card Body -->
+    <rect x="92" y="${cardY}" width="896" height="${cardHeight}" rx="36" fill="${cardBgFill}" stroke="${borderStroke}" stroke-width="${borderStroke !== 'none' ? '3' : '0'}"/>
+    
+    <!-- Player Headshot Cards -->
+    <circle cx="310" cy="${cardY + 130}" r="78" fill="${theme === 'classic' ? '#eef8c7' : theme === 'neon' ? '#293029' : theme === 'cyberpunk' ? '#1f0d36' : '#ebd9d0'}"/>
+    <text x="310" y="${cardY + 148}" fill="${theme === 'classic' ? '#536b16' : theme === 'neon' ? '#cdea5f' : theme === 'cyberpunk' ? '#ff007f' : '#d66840'}" text-anchor="middle" font-family="${fontStack}" font-size="44" font-weight="900">${safeInitials}</text>
+    
+    <circle cx="770" cy="${cardY + 130}" r="78" fill="${theme === 'classic' ? '#f1f3ea' : theme === 'neon' ? '#252925' : theme === 'cyberpunk' ? '#18122d' : '#ebd9d0'}"/>
+    <text x="770" y="${cardY + 148}" fill="${textSubColor}" text-anchor="middle" font-family="${fontStack}" font-size="44" font-weight="900">${safeOpponentInitials}</text>
+    
+    <circle cx="540" cy="${cardY + 130}" r="34" fill="${theme === 'classic' ? '#fbfde9' : theme === 'neon' ? '#1d221d' : '#f4efe2'}"/>
+    <text x="540" y="${cardY + 140}" fill="${textTitleColor}" text-anchor="middle" font-family="${fontStack}" font-size="22" font-weight="900">VS</text>
+    
+    <text x="310" y="${cardY + 250}" fill="${textTitleColor}" text-anchor="middle" font-family="${fontStack}" font-size="38" font-weight="900">${safeName}</text>
+    <text x="310" y="${cardY + 294}" fill="${textSubColor}" text-anchor="middle" font-family="${fontStack}" font-size="24">${safeRating}</text>
+    
+    <text x="770" y="${cardY + 250}" fill="${textTitleColor}" text-anchor="middle" font-family="${fontStack}" font-size="38" font-weight="900">${safeOpponent}</text>
+    <text x="770" y="${cardY + 294}" fill="${textSubColor}" text-anchor="middle" font-family="${fontStack}" font-size="24">Opponent</text>
+
+    <!-- DASHBOARD CONTENT DEPENDING ON RATIO -->
+    ${ratio === "1:1" ? `
+      <!-- 1:1 Post Layout: Side-by-side Dashboard -->
+      
+      <!-- Left Column: Sets and Stats -->
+      ${options.showSets ? `
+        <!-- Sets Mini Table -->
+        <g transform="translate(130, ${cardY + 340})">
+          <text x="0" y="0" fill="${textSubColor}" font-family="${fontStack}" font-size="20" font-weight="800">SET BREAKDOWN</text>
+          <g transform="translate(0, 16)">
+            <!-- Header Row -->
+            <rect width="360" height="34" fill="rgba(0,0,0,0.03)" rx="4"/>
+            <text x="12" y="22" fill="${textSubColor}" font-family="${fontStack}" font-size="16" font-weight="700">PLAYER</text>
+            <text x="200" y="22" fill="${textSubColor}" font-family="${fontStack}" font-size="16" font-weight="700" text-anchor="middle">S1</text>
+            <text x="260" y="22" fill="${textSubColor}" font-family="${fontStack}" font-size="16" font-weight="700" text-anchor="middle">S2</text>
+            <text x="320" y="22" fill="${textSubColor}" font-family="${fontStack}" font-size="16" font-weight="700" text-anchor="middle">S3</text>
+            
+            <!-- Player 1 Row -->
+            <text x="12" y="60" fill="${textTitleColor}" font-family="${fontStack}" font-size="18" font-weight="800">${safeName.slice(0, 12)}</text>
+            <text x="200" y="60" fill="${textTitleColor}" font-family="${fontStack}" font-size="18" font-weight="800" text-anchor="middle">${record.sets?.[0]?.games?.[0] ?? "-"}</text>
+            <text x="260" y="60" fill="${textTitleColor}" font-family="${fontStack}" font-size="18" font-weight="800" text-anchor="middle">${record.sets?.[1]?.games?.[0] ?? "-"}</text>
+            <text x="320" y="60" fill="${textTitleColor}" font-family="${fontStack}" font-size="18" font-weight="800" text-anchor="middle">${record.sets?.[2]?.games?.[0] ?? "-"}</text>
+            
+            <!-- Player 2 Row -->
+            <text x="12" y="90" fill="${textSubColor}" font-family="${fontStack}" font-size="18" font-weight="800">${safeOpponent.slice(0, 12)}</text>
+            <text x="200" y="90" fill="${textSubColor}" font-family="${fontStack}" font-size="18" font-weight="800" text-anchor="middle">${record.sets?.[0]?.games?.[1] ?? "-"}</text>
+            <text x="260" y="90" fill="${textSubColor}" font-family="${fontStack}" font-size="18" font-weight="800" text-anchor="middle">${record.sets?.[1]?.games?.[1] ?? "-"}</text>
+            <text x="320" y="90" fill="${textSubColor}" font-family="${fontStack}" font-size="18" font-weight="800" text-anchor="middle">${record.sets?.[2]?.games?.[1] ?? "-"}</text>
+          </g>
+        </g>
+      ` : ""}
+
+      ${options.showStats ? `
+        <!-- Match Stats comparative bars -->
+        <g transform="translate(130, ${options.showSets ? cardY + 480 : cardY + 340})">
+          <!-- Aces -->
+          <text x="0" y="0" fill="${textSubColor}" font-family="${fontStack}" font-size="16" font-weight="700">ACES (${p1Aces} vs ${p2Aces})</text>
+          <rect x="0" y="8" width="360" height="8" rx="4" fill="rgba(0,0,0,0.06)"/>
+          <rect x="0" y="8" width="${Math.round(3.6 * acesPct)}" height="8" rx="4" fill="${brandColor}" class="anim-bar-val"/>
+          
+          <!-- Winners -->
+          <text x="0" y="36" fill="${textSubColor}" font-family="${fontStack}" font-size="16" font-weight="700">WINNERS (${p1Winners} vs ${p2Winners})</text>
+          <rect x="0" y="44" width="360" height="8" rx="4" fill="rgba(0,0,0,0.06)"/>
+          <rect x="0" y="44" width="${Math.round(3.6 * winnersPct)}" height="8" rx="4" fill="${brandColor}" class="anim-bar-val"/>
+        </g>
+      ` : ""}
+
+      <!-- Right Column: Court Map and Commentary -->
+      ${options.showCourt ? `
+        <g transform="translate(580, ${cardY + 340})">
+          ${courtMapSvg}
+        </g>
+      ` : ""}
+
+      ${commentaryText ? `
+        <g transform="translate(130, ${cardY + 540})">
+          <rect x="-10" y="-22" width="810" height="52" fill="rgba(0,0,0,0.02)" rx="8"/>
+          <text x="0" y="0" fill="${textTitleColor}" font-family="${fontStack}" font-size="15" font-style="italic" font-weight="700">${wrappedCommentary[0] || ""}</text>
+        </g>
+      ` : ""}
+    ` : `
+      <!-- 9:16 Story Layout: Stacked Dashboard -->
+      
+      ${options.showSets ? `
+        <!-- Sets Table full width -->
+        <g transform="translate(100, ${cardY + 360})">
+          <rect width="880" height="150" fill="rgba(0,0,0,0.02)" rx="18"/>
+          <text x="30" y="40" fill="${textSubColor}" font-family="${fontStack}" font-size="22" font-weight="800">SET BREAKDOWN</text>
+          
+          <!-- Player Row 1 -->
+          <text x="30" y="90" fill="${textTitleColor}" font-family="${fontStack}" font-size="26" font-weight="800">${safeName}</text>
+          <text x="560" y="90" fill="${textTitleColor}" font-family="${fontStack}" font-size="28" font-weight="900" text-anchor="middle">${record.sets?.[0]?.games?.[0] ?? "-"}</text>
+          <text x="680" y="90" fill="${textTitleColor}" font-family="${fontStack}" font-size="28" font-weight="900" text-anchor="middle">${record.sets?.[1]?.games?.[0] ?? "-"}</text>
+          <text x="800" y="90" fill="${textTitleColor}" font-family="${fontStack}" font-size="28" font-weight="900" text-anchor="middle">${record.sets?.[2]?.games?.[0] ?? "-"}</text>
+          
+          <!-- Player Row 2 -->
+          <text x="30" y="130" fill="${textSubColor}" font-family="${fontStack}" font-size="26" font-weight="800">${safeOpponent}</text>
+          <text x="560" y="130" fill="${textSubColor}" font-family="${fontStack}" font-size="28" font-weight="900" text-anchor="middle">${record.sets?.[0]?.games?.[1] ?? "-"}</text>
+          <text x="680" y="130" fill="${textSubColor}" font-family="${fontStack}" font-size="28" font-weight="900" text-anchor="middle">${record.sets?.[1]?.games?.[1] ?? "-"}</text>
+          <text x="800" y="130" fill="${textSubColor}" font-family="${fontStack}" font-size="28" font-weight="900" text-anchor="middle">${record.sets?.[2]?.games?.[1] ?? "-"}</text>
+        </g>
+      ` : ""}
+
+      ${options.showStats ? `
+        <!-- Stats Bars full width -->
+        <g transform="translate(100, ${cardY + 540})">
+          <text x="0" y="0" fill="${textSubColor}" font-family="${fontStack}" font-size="22" font-weight="800">MATCH STATS</text>
+          
+          <!-- Aces Bar -->
+          <text x="0" y="40" fill="${textTitleColor}" font-family="${fontStack}" font-size="20" font-weight="800">Aces: ${p1Aces} vs ${p2Aces}</text>
+          <rect x="0" y="54" width="880" height="14" rx="7" fill="rgba(0,0,0,0.06)"/>
+          <rect x="0" y="54" width="${Math.round(8.8 * acesPct)}" height="14" rx="7" fill="${brandColor}" class="anim-bar-val"/>
+          
+          <!-- Winners Bar -->
+          <text x="0" y="110" fill="${textTitleColor}" font-family="${fontStack}" font-size="20" font-weight="800">Winners: ${p1Winners} vs ${p2Winners}</text>
+          <rect x="0" y="124" width="880" height="14" rx="7" fill="rgba(0,0,0,0.06)"/>
+          <rect x="0" y="124" width="${Math.round(8.8 * winnersPct)}" height="14" rx="7" fill="${brandColor}" class="anim-bar-val"/>
+          
+          <!-- Errors Bar -->
+          <text x="0" y="180" fill="${textTitleColor}" font-family="${fontStack}" font-size="20" font-weight="800">Errors: ${p1Errors} vs ${p2Errors}</text>
+          <rect x="0" y="194" width="880" height="14" rx="7" fill="rgba(0,0,0,0.06)"/>
+          <rect x="0" y="194" width="${Math.round(8.8 * errorsPct)}" height="14" rx="7" fill="${brandColor}" class="anim-bar-val"/>
+        </g>
+      ` : ""}
+
+      ${options.showCourt ? `
+        <!-- Court Map Centered -->
+        <g transform="translate(370, ${cardY + 800})">
+          <text x="-270" y="80" fill="${textSubColor}" font-family="${fontStack}" font-size="22" font-weight="800">SHOT TRACKER</text>
+          ${courtMapSvg}
+        </g>
+      ` : ""}
+
+      ${commentaryText ? `
+        <!-- Commentary Quote Box -->
+        <g transform="translate(100, ${cardY + 1000})">
+          <rect width="880" height="110" fill="rgba(0,0,0,0.02)" rx="18"/>
+          <text x="30" y="40" fill="${textTitleColor}" font-family="${fontStack}" font-size="18" font-style="italic" font-weight="700">
+            ${wrappedCommentary.map((line, idx) => `<tspan x="30" dy="${idx === 0 ? 0 : 26}">${line}</tspan>`).join("")}
+          </text>
+        </g>
+      ` : ""}
+    `}
   </g>
-  <text x="92" y="990" fill="#697365" font-family="Inter, Arial" font-size="30" font-weight="800">FINAL SCORE</text>
-  <text x="92" y="1080" fill="#161b16" font-family="Inter, Arial" font-size="72" font-weight="900">${safeFinalScore}</text>
-  <rect x="676" y="996" width="236" height="72" rx="36" fill="#cdea5f"/>
-  <text x="794" y="1044" fill="#1e2b11" text-anchor="middle" font-family="Inter, Arial" font-size="26" font-weight="900">${safeWinner}</text>
-  <text x="92" y="1240" fill="#697365" font-family="Inter, Arial" font-size="28">Generated by AceTrack</text>
+  
+  <text x="92" y="${scoreY}" fill="${textSubColor}" font-family="${fontStack}" font-size="30" font-weight="800">FINAL SCORE</text>
+  <text x="92" y="${scoreY + 80}" fill="${textTitleColor}" font-family="${fontStack}" font-size="64" font-weight="900">${safeFinalScore}</text>
+  
+  <rect x="676" y="${winnerBadgeY}" width="236" height="72" rx="36" fill="${winnerBg}"/>
+  <text x="794" y="${winnerBadgeY + 46}" fill="${winnerText}" text-anchor="middle" font-family="${fontStack}" font-size="24" font-weight="900">${safeWinner}</text>
+  
+  <text x="92" y="${footerY}" fill="${textSubColor}" font-family="${fontStack}" font-size="24">Generated by AceTrack</text>
+  
+  <!-- Add Sticker overlay if selected -->
+  ${stickerSvg}
 </svg>`;
 
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -5316,4 +6279,644 @@ function TennisBall() {
 
 function formatEquipmentLabel(label: string) {
   return label.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+// --- Momentum Chart Component ---
+function MomentumChart({ history, finalState }: { history: MatchSnapshot[]; finalState: MatchState }) {
+  const points: (0 | 1)[] = [];
+  const allSnapshots = [...history, finalState];
+  for (let i = 0; i < allSnapshots.length - 1; i++) {
+    const prev = allSnapshots[i];
+    const next = allSnapshots[i + 1];
+    let winner: 0 | 1 = 0;
+    if (next.sets.length > prev.sets.length) {
+      const lastSet = next.sets[prev.sets.length];
+      winner = lastSet.winner ?? 0;
+    } else if (next.currentSet.games[0] > prev.currentSet.games[0]) {
+      winner = 0;
+    } else if (next.currentSet.games[1] > prev.currentSet.games[1]) {
+      winner = 1;
+    } else if (next.pointScore[0] > prev.pointScore[0]) {
+      winner = 0;
+    } else if (next.pointScore[1] > prev.pointScore[1]) {
+      winner = 1;
+    }
+    points.push(winner);
+  }
+
+  if (points.length === 0) {
+    return (
+      <div className="momentum-card empty">
+        <p className="eyebrow">Match Momentum</p>
+        <p className="note">Play points to see match momentum timeline.</p>
+      </div>
+    );
+  }
+
+  let currentDiff = 0;
+  const curve = [0];
+  let minDiff = 0;
+  let maxDiff = 0;
+  points.forEach((winner) => {
+    if (winner === 0) currentDiff += 1;
+    else currentDiff -= 1;
+    curve.push(currentDiff);
+    if (currentDiff < minDiff) minDiff = currentDiff;
+    if (currentDiff > maxDiff) maxDiff = currentDiff;
+  });
+
+  const width = 500;
+  const height = 150;
+  const paddingX = 35;
+  const paddingY = 20;
+  const chartWidth = width - 2 * paddingX;
+  const chartHeight = height - 2 * paddingY;
+
+  const absMax = Math.max(Math.abs(minDiff), Math.abs(maxDiff), 2);
+  const yMin = -absMax;
+  const yMax = absMax;
+
+  const pointsCount = curve.length;
+  const getX = (index: number) => paddingX + (index / (pointsCount - 1)) * chartWidth;
+  const getY = (val: number) => {
+    const ratio = (val - yMin) / (yMax - yMin);
+    return height - paddingY - ratio * chartHeight;
+  };
+
+  const pathData = curve.map((val, idx) => `${getX(idx).toFixed(1)},${getY(val).toFixed(1)}`).join(" L ");
+  const linePath = `M ${pathData}`;
+  const baselineY = getY(0);
+  const areaPath = `M ${getX(0).toFixed(1)},${baselineY.toFixed(1)} L ${pathData} L ${getX(pointsCount - 1).toFixed(1)},${baselineY.toFixed(1)} Z`;
+
+  return (
+    <div className="momentum-card">
+      <div className="section-row">
+        <p className="eyebrow">Match Momentum</p>
+        <span className="momentum-legend">
+          <span className="dot player0" /> {finalState.players[0]}
+          <span className="dot player1" /> {finalState.players[1]}
+        </span>
+      </div>
+      <div className="chart-container">
+        <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="100%" className="momentum-svg">
+          <defs>
+            <linearGradient id="momentumGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="rgba(159, 198, 58, 0.35)" />
+              <stop offset="55%" stopColor="rgba(159, 198, 58, 0.05)" />
+              <stop offset="100%" stopColor="rgba(105, 115, 101, 0.1)" />
+            </linearGradient>
+          </defs>
+
+          {/* Grid lines */}
+          <line x1={paddingX} y1={baselineY} x2={width - paddingX} y2={baselineY} stroke="#e1e5e0" strokeDasharray="3 3" />
+          <line x1={paddingX} y1={getY(yMax)} x2={width - paddingX} y2={getY(yMax)} stroke="#eef8c7" strokeWidth="1" strokeDasharray="2 2" />
+          <line x1={paddingX} y1={getY(yMin)} x2={width - paddingX} y2={getY(yMin)} stroke="#f3f4f1" strokeWidth="1" strokeDasharray="2 2" />
+
+          {/* Axis Labels */}
+          <text x={paddingX - 10} y={getY(yMax) + 4} textAnchor="end" className="chart-y-label">+{yMax}</text>
+          <text x={paddingX - 10} y={baselineY + 4} textAnchor="end" className="chart-y-label">0</text>
+          <text x={paddingX - 10} y={getY(yMin) + 4} textAnchor="end" className="chart-y-label">-{yMax}</text>
+
+          <text x={paddingX} y={getY(yMax) - 4} className="chart-label label-user">Lead {getCompactSideName(finalState.players[0])}</text>
+          <text x={paddingX} y={getY(yMin) + 12} className="chart-label label-opp">Lead {getCompactSideName(finalState.players[1])}</text>
+
+          {/* Filled Area */}
+          <path d={areaPath} fill="url(#momentumGrad)" />
+
+          {/* Trend Line */}
+          <path d={linePath} fill="none" stroke="#536b16" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+
+          {/* End Marker */}
+          <circle cx={getX(pointsCount - 1)} cy={getY(curve[pointsCount - 1])} r="5" fill="#9fc63a" stroke="#fff" strokeWidth="2" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+// --- Skills Radar Chart Component ---
+function SkillsRadarChart({
+  skills,
+  proSkills
+}: {
+  skills: Array<[string, number]>;
+  proSkills: readonly number[];
+}) {
+  const cx = 110;
+  const cy = 110;
+  const R = 75;
+  const N = 6;
+  const skillCodes = ["FH", "BH", "SRV", "VOL", "SLC", "MVT"];
+
+  const concentricHexagons = [0.2, 0.4, 0.6, 0.8, 1.0].map((scale) => {
+    const points: string[] = [];
+    for (let i = 0; i < N; i++) {
+      const angle = (i * 2 * Math.PI) / N - Math.PI / 2;
+      const x = cx + R * scale * Math.cos(angle);
+      const y = cy + R * scale * Math.sin(angle);
+      points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    }
+    return points.join(" L ") + " Z";
+  });
+
+  const userPoints: string[] = [];
+  for (let i = 0; i < N; i++) {
+    const angle = (i * 2 * Math.PI) / N - Math.PI / 2;
+    const val = skills[i]?.[1] ?? 0;
+    const scale = val / 100;
+    const x = cx + R * scale * Math.cos(angle);
+    const y = cy + R * scale * Math.sin(angle);
+    userPoints.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  const userPath = userPoints.join(" L ") + " Z";
+
+  const proPoints: string[] = [];
+  for (let i = 0; i < N; i++) {
+    const angle = (i * 2 * Math.PI) / N - Math.PI / 2;
+    const val = proSkills[i] ?? 0;
+    const scale = val / 100;
+    const x = cx + R * scale * Math.cos(angle);
+    const y = cy + R * scale * Math.sin(angle);
+    proPoints.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+  }
+  const proPath = proPoints.join(" L ") + " Z";
+
+  const labelOffsets = [
+    { x: 0, y: -12 },
+    { x: 10, y: -4 },
+    { x: 10, y: 12 },
+    { x: 0, y: 16 },
+    { x: -10, y: 12 },
+    { x: -10, y: -4 }
+  ];
+
+  return (
+    <div className="radar-chart-container">
+      <svg viewBox="0 0 220 220" className="radar-svg">
+        {concentricHexagons.map((path, idx) => (
+          <path d={path} fill="none" stroke="#e1e5e0" strokeWidth="1" key={idx} />
+        ))}
+        {Array.from({ length: N }).map((_, i) => {
+          const angle = (i * 2 * Math.PI) / N - Math.PI / 2;
+          const x = cx + R * Math.cos(angle);
+          const y = cy + R * Math.sin(angle);
+          return <line x1={cx} y1={cy} x2={x} y2={y} stroke="#e1e5e0" strokeWidth="1" key={i} />;
+        })}
+        <path d={proPath} fill="rgba(105, 115, 101, 0.15)" stroke="#697365" strokeWidth="1.5" />
+        <path d={userPath} fill="rgba(159, 198, 58, 0.28)" stroke="#536b16" strokeWidth="2.5" />
+        {Array.from({ length: N }).map((_, i) => {
+          const angle = (i * 2 * Math.PI) / N - Math.PI / 2;
+          const x = cx + (R + 15) * Math.cos(angle);
+          const y = cy + (R + 10) * Math.sin(angle);
+          const code = skillCodes[i];
+          const offset = labelOffsets[i];
+          return (
+            <text x={x + offset.x} y={y + offset.y} textAnchor="middle" className="radar-label" key={code}>
+              {code}
+            </text>
+          );
+        })}
+      </svg>
+      <div className="radar-legend">
+        <span><i className="you" /> You</span>
+        <span><i className="pro" /> Pro</span>
+      </div>
+    </div>
+  );
+}
+
+// --- Apple Watch Companion Simulator Component ---
+function AppleWatchSimulator({
+  match,
+  onAction,
+  onClose
+}: {
+  match: MatchState;
+  onAction: (type: "pointA" | "pointB" | "aceA" | "aceB" | "undo" | "end") => void;
+  onClose: () => void;
+}) {
+  const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const compactNames = match.players.map(getCompactSideName);
+
+  return (
+    <div className="watch-simulator-overlay" role="dialog" aria-label="Apple Watch Simulator">
+      <div className="watch-case">
+        <div className="watch-crown" />
+        <div className="watch-button" />
+        <div className="watch-screen">
+          <header className="watch-header">
+            <span className="watch-app-name">🎾 AceTrack</span>
+            <span className="watch-time">{timeString}</span>
+          </header>
+          
+          <div className="watch-match-info">
+            <span className="watch-vs">{compactNames[0]} vs {compactNames[1]}</span>
+            <div className="watch-serving-row">
+              <span className={match.server === 0 ? "active" : ""}>●</span>
+              <span className="srv-lbl">SRV</span>
+              <span className={match.server === 1 ? "active" : ""}>●</span>
+            </div>
+          </div>
+
+          <div className="watch-score-display">
+            <div className="watch-score-box">
+              <span className="player-lbl">{compactNames[0]}</span>
+              <span className="pts">{getPointDisplay(match)[0]}</span>
+            </div>
+            <div className="watch-score-box">
+              <span className="player-lbl">{compactNames[1]}</span>
+              <span className="pts">{getPointDisplay(match)[1]}</span>
+            </div>
+          </div>
+
+          <div className="watch-actions-grid">
+            <button className="watch-action-btn point-btn" onClick={() => onAction("pointA")}>
+              + {compactNames[0]}
+            </button>
+            <button className="watch-action-btn point-btn" onClick={() => onAction("pointB")}>
+              + {compactNames[1]}
+            </button>
+            <button className="watch-action-btn ace-btn" onClick={() => onAction("aceA")}>
+              Ace {compactNames[0]}
+            </button>
+            <button className="watch-action-btn ace-btn" onClick={() => onAction("aceB")}>
+              Ace {compactNames[1]}
+            </button>
+          </div>
+
+          <footer className="watch-footer">
+            <button className="watch-util-btn undo" onClick={() => onAction("undo")} aria-label="Undo">
+              <RotateCcw size={12} /> Undo
+            </button>
+            <button className="watch-util-btn end" onClick={() => onAction("end")} aria-label="End Match">
+              <Trophy size={12} /> End
+            </button>
+          </footer>
+        </div>
+      </div>
+      <button className="close-watch-sim-btn" onClick={onClose}>
+        <X size={18} /> Close Simulator
+      </button>
+    </div>
+  );
+}
+
+// --- Poke Animation Component ---
+function TennisPokeAnimation({ senderName, onComplete }: { senderName: string; onComplete: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onComplete, 2200);
+    return () => clearTimeout(timer);
+  }, [onComplete]);
+
+  return (
+    <div className="poke-animation-overlay">
+      <div className="flying-tennis-ball-container">
+        <div className="flying-tennis-ball" />
+      </div>
+      <div className="poke-toast-card">
+        <strong>🎾 {senderName} poked you!</strong>
+        <span>Tap back to say hello!</span>
+      </div>
+    </div>
+  );
+}
+
+// --- Highlight Playback Simulator Component ---
+function HighlightVideoSimulator({
+  clip,
+  onClose,
+  soundEnabled = true
+}: {
+  clip: HighlightClip;
+  onClose: () => void;
+  soundEnabled?: boolean;
+}) {
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [camera, setCamera] = useState<"tactical" | "baseline" | "umpire">("tactical");
+  
+  // Animation state values
+  const [progress, setProgress] = useState(0); // 0 to 1
+  const [dustCircle, setDustCircle] = useState<{ x: number; y: number; active: boolean }>({ x: 0, y: 0, active: false });
+  const [speedVal, setSpeedVal] = useState(115);
+
+  // Constants
+  const traj = clip.trajectory;
+  const xStart = (traj.startX / 320) * 200 - 100;
+  const yStart = (traj.startY / 160) * 400 - 200;
+  const xEnd = (traj.endX / 320) * 200 - 100;
+  const yEnd = (traj.endY / 160) * 400 - 200;
+
+  // Compute a deterministic bounce spot
+  const xBounce = xStart + (xEnd - xStart) * 0.6 + (Math.sin(traj.startX) * 15);
+  const yBounce = yStart + (yEnd - yStart) * 0.65;
+
+  // Sound flags to prevent repeated triggers
+  const soundPlayedRef = useRef({ hitStart: false, bounce: false, hitEnd: false });
+
+  // Reset function
+  function restartAnimation() {
+    setProgress(0);
+    setIsPlaying(true);
+    setDustCircle({ x: 0, y: 0, active: false });
+    soundPlayedRef.current = { hitStart: false, bounce: false, hitEnd: false };
+  }
+
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    let startTime: number | null = null;
+    const duration = 2200; // 2.2 seconds animation
+
+    let animId: number;
+
+    const tick = (now: number) => {
+      if (!startTime) startTime = now;
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      setProgress(t);
+
+      // Speedometer calculation
+      if (t < 0.65) {
+        setSpeedVal(Math.round(112 + (1 - t / 0.65) * 16));
+      } else {
+        setSpeedVal(Math.round(82 + (1 - (t - 0.65) / 0.35) * 12));
+      }
+
+      // Audio sync
+      if (t >= 0 && !soundPlayedRef.current.hitStart) {
+        soundPlayedRef.current.hitStart = true;
+        if (soundEnabled) {
+          playRacketHit();
+        }
+      }
+
+      if (t >= 0.65 && !soundPlayedRef.current.bounce) {
+        soundPlayedRef.current.bounce = true;
+        
+        // Compute screen coordinates of bounce for the dust splash
+        const bounceScreen = project(xBounce, yBounce, 0, camera);
+        setDustCircle({ x: bounceScreen.x, y: bounceScreen.y, active: true });
+
+        if (soundEnabled) {
+          playBallBounce();
+        }
+      }
+
+      if (t >= 1.0 && !soundPlayedRef.current.hitEnd) {
+        soundPlayedRef.current.hitEnd = true;
+        if (soundEnabled) {
+          if (clip.tag === "Ace" || clip.tag === "Winner") {
+            playAceChime();
+            setTimeout(() => playCrowdCheer(), 150);
+          } else {
+            playRacketHit();
+          }
+        }
+        setIsPlaying(false);
+      }
+
+      if (t < 1) {
+        animId = requestAnimationFrame(tick);
+      }
+    };
+
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
+  }, [isPlaying, camera, clip, soundEnabled]);
+
+  // Interpolate ball 3D position
+  let ballX = 0;
+  let ballY = 0;
+  let ballZ = 0;
+
+  const tBounce = 0.65;
+  if (progress < tBounce) {
+    const pct = progress / tBounce;
+    ballX = xStart + (xBounce - xStart) * pct;
+    ballY = yStart + (yBounce - yStart) * pct;
+    ballZ = 45 * Math.sin(pct * Math.PI); // Parabola height
+  } else {
+    const pct = (progress - tBounce) / (1 - tBounce);
+    ballX = xBounce + (xEnd - xBounce) * pct;
+    ballY = yBounce + (yEnd - yBounce) * pct;
+    ballZ = 18 * Math.sin(pct * Math.PI); // Smaller bounce height
+  }
+
+  // Projection math
+  function project(x: number, y: number, z: number, view: string) {
+    if (view === "baseline") {
+      const scale = 300 / (y + 260);
+      const screenX = 300 + x * 0.75 * scale;
+      const screenY = 240 + y * 0.45 * scale - z * 0.85 * scale;
+      return { x: screenX, y: screenY };
+    } else if (view === "umpire") {
+      const scale = 260 / (x + 220);
+      const screenX = 300 + y * 0.8 * scale;
+      const screenY = 180 + x * 0.35 * scale - z * 0.9 * scale;
+      return { x: screenX, y: screenY };
+    } else {
+      // Tactical Broadcaster View
+      const scale = 350 / (y + 450);
+      const screenX = 300 + x * 1.4 * scale;
+      const screenY = 180 + y * 0.6 * scale - z * 1.1 * scale;
+      return { x: screenX, y: screenY };
+    }
+  }
+
+  // Project ball and its shadow
+  const ballPos = project(ballX, ballY, ballZ, camera);
+  const shadowPos = project(ballX, ballY, 0, camera);
+
+  // Draw perspective court lines
+  const baselineBack = [[-100, -200, 0], [100, -200, 0]] as [number, number, number][];
+  const baselineFront = [[-100, 200, 0], [100, 200, 0]] as [number, number, number][];
+  const sidelineLeft = [[-100, -200, 0], [-100, 200, 0]] as [number, number, number][];
+  const sidelineRight = [[100, -200, 0], [100, 200, 0]] as [number, number, number][];
+  const serviceBack = [[-100, -100, 0], [100, -100, 0]] as [number, number, number][];
+  const serviceFront = [[-100, 100, 0], [100, 100, 0]] as [number, number, number][];
+  const serviceCenter = [[0, -100, 0], [0, 100, 0]] as [number, number, number][];
+  
+  // Net posts and net cord in 3D
+  const netCord = [[-115, 0, 36], [115, 0, 36]] as [number, number, number][];
+  const netBottom = [[-115, 0, 0], [115, 0, 0]] as [number, number, number][];
+  const netPostLeft = [[-115, 0, 0], [-115, 0, 36]] as [number, number, number][];
+  const netPostRight = [[115, 0, 0], [115, 0, 36]] as [number, number, number][];
+
+  function getPath(pts: [number, number, number][]) {
+    return pts.map((p, idx) => {
+      const projected = project(p[0], p[1], p[2], camera);
+      return `${idx === 0 ? "M" : "L"} ${projected.x.toFixed(1)} ${projected.y.toFixed(1)}`;
+    }).join(" ");
+  }
+
+  // Get historical trajectory path for display
+  const trajectoryPathPts: [number, number, number][] = [];
+  const steps = 30;
+  for (let i = 0; i <= steps * progress; i++) {
+    const tVal = i / steps;
+    let bx = 0;
+    let by = 0;
+    let bz = 0;
+    if (tVal < tBounce) {
+      const pct = tVal / tBounce;
+      bx = xStart + (xBounce - xStart) * pct;
+      by = yStart + (yBounce - yStart) * pct;
+      bz = 45 * Math.sin(pct * Math.PI);
+    } else {
+      const pct = (tVal - tBounce) / (1 - tBounce);
+      bx = xBounce + (xEnd - xBounce) * pct;
+      by = yBounce + (yEnd - yBounce) * pct;
+      bz = 18 * Math.sin(pct * Math.PI);
+    }
+    trajectoryPathPts.push([bx, by, bz]);
+  }
+
+  return (
+    <div className="highlight-simulator-overlay" role="dialog" aria-label="Highlight Playback Simulator">
+      <div className="playback-case">
+        <div className="viewfinder-header">
+          <span className="rec-indicator">
+            <span className="red-dot" /> LIVE 3D REPLAY
+          </span>
+          <span className="playback-time">CLP #{clip.id.substring(0, 4).toUpperCase()}</span>
+          <button className="playback-close" onClick={onClose} aria-label="Close clip">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="playback-canvas-area">
+          <svg viewBox="0 0 600 320" className="playback-court-svg">
+            {/* Background grid representing space */}
+            <rect width="600" height="320" fill="#141812" />
+            
+            {/* Perspective tennis court lines */}
+            <path d={getPath(sidelineLeft)} stroke="rgba(255,255,255,0.7)" strokeWidth="3" fill="none" />
+            <path d={getPath(sidelineRight)} stroke="rgba(255,255,255,0.7)" strokeWidth="3" fill="none" />
+            <path d={getPath(baselineBack)} stroke="rgba(255,255,255,0.8)" strokeWidth="3" fill="none" />
+            <path d={getPath(baselineFront)} stroke="rgba(255,255,255,0.8)" strokeWidth="3" fill="none" />
+            
+            <path d={getPath(serviceBack)} stroke="rgba(255,255,255,0.5)" strokeWidth="2" fill="none" />
+            <path d={getPath(serviceFront)} stroke="rgba(255,255,255,0.5)" strokeWidth="2" fill="none" />
+            <path d={getPath(serviceCenter)} stroke="rgba(255,255,255,0.5)" strokeWidth="2" fill="none" />
+
+            {/* Net mesh background */}
+            <path d={`${getPath(netPostLeft)} L ${project(115,0,36,camera).x} ${project(115,0,36,camera).y} L ${project(115,0,0,camera).x} ${project(115,0,0,camera).y} Z`} fill="rgba(255,255,255,0.06)" />
+            
+            {/* Net cord and posts */}
+            <path d={getPath(netPostLeft)} stroke="#ffffff" strokeWidth="4" fill="none" />
+            <path d={getPath(netPostRight)} stroke="#ffffff" strokeWidth="4" fill="none" />
+            <path d={getPath(netCord)} stroke="#ffffff" strokeWidth="3.5" fill="none" />
+            <path d={getPath(netBottom)} stroke="rgba(255,255,255,0.3)" strokeWidth="1.5" fill="none" />
+
+            {/* Historical ball trajectory trail in 3D */}
+            {progress > 0 && (
+              <path
+                d={getPath(trajectoryPathPts)}
+                fill="none"
+                stroke="url(#trail-gradient)"
+                strokeWidth="4"
+                strokeLinecap="round"
+              />
+            )}
+
+            <defs>
+              <linearGradient id="trail-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="rgba(205, 234, 95, 0.05)" />
+                <stop offset="100%" stopColor="rgba(205, 234, 95, 0.95)" />
+              </linearGradient>
+              <radialGradient id="shadow-gradient">
+                <stop offset="0%" stopColor="rgba(0,0,0,0.6)" />
+                <stop offset="100%" stopColor="rgba(0,0,0,0)" />
+              </radialGradient>
+            </defs>
+
+            {/* Ball shadow on court floor */}
+            {isPlaying && progress < 1.0 && (
+              <ellipse
+                cx={shadowPos.x}
+                cy={shadowPos.y}
+                rx={Math.max(4, 10 - ballZ * 0.08)}
+                ry={Math.max(2, 5 - ballZ * 0.04)}
+                fill="url(#shadow-gradient)"
+              />
+            )}
+
+            {/* Court bounce impact splash circle */}
+            {dustCircle.active && (
+              <circle
+                cx={dustCircle.x}
+                cy={dustCircle.y}
+                r="18"
+                fill="none"
+                stroke="rgba(255, 255, 255, 0.5)"
+                strokeWidth="2"
+                style={{
+                  transformOrigin: `${dustCircle.x}px ${dustCircle.y}px`,
+                  animation: "dustExpand 0.4s ease-out forwards"
+                }}
+              />
+            )}
+
+            {/* 3D ball representation */}
+            {isPlaying && progress < 1.0 && (
+              <g>
+                <circle
+                  cx={ballPos.x}
+                  cy={ballPos.y}
+                  r={Math.max(4.5, 9 + ballZ * 0.05)}
+                  fill="#cdea5f"
+                  stroke="#1e2b11"
+                  strokeWidth="1.5"
+                  style={{
+                    filter: "drop-shadow(0 0 6px #cdea5f)"
+                  }}
+                />
+                {/* Ball seam effect */}
+                <path
+                  d={`M ${ballPos.x - 4} ${ballPos.y} Q ${ballPos.x} ${ballPos.y - 3} ${ballPos.x + 4} ${ballPos.y}`}
+                  fill="none"
+                  stroke="#ffffff"
+                  strokeWidth="1"
+                  opacity="0.75"
+                />
+              </g>
+            )}
+          </svg>
+
+          {/* Speedometer overlay */}
+          <div className="speedometer-container">
+            <span className="speed-title">SHOT SPEED</span>
+            <span className="speed-number">{speedVal} <small>mph</small></span>
+          </div>
+
+          <div className="viewfinder-hud-bottom">
+            <div>
+              <h3>{clip.title}</h3>
+              <p>{clip.pointInfo} · Spin: 2200 RPM</p>
+            </div>
+            <div className="hud-badge">{clip.tag}</div>
+          </div>
+        </div>
+
+        <div className="playback-controls">
+          <button className="hero-action compact" onClick={restartAnimation} style={{ width: "auto", margin: 0 }}>
+            <RotateCcw size={16} /> Replay
+          </button>
+          
+          {/* Camera perspective buttons */}
+          <div className="camera-selector">
+            <button className={camera === "tactical" ? "active" : ""} onClick={() => setCamera("tactical")} title="Tactical High-Cam">
+              <Tv size={14} /> Tactical
+            </button>
+            <button className={camera === "baseline" ? "active" : ""} onClick={() => setCamera("baseline")} title="Court Baseline Cam">
+              <Tv size={14} /> Baseline
+            </button>
+            <button className={camera === "umpire" ? "active" : ""} onClick={() => setCamera("umpire")} title="Chair Umpire Cam">
+              <Tv size={14} /> Umpire
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

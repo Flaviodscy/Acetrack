@@ -454,7 +454,7 @@ function getPairId(firstUserId: string, secondUserId: string) {
   return [firstUserId, secondUserId].sort().join("__");
 }
 
-function getPointsFromRating(rating: string) {
+export function getPointsFromRating(rating: string) {
   const points = Number.parseInt(rating.replace(/[^\d]/g, ""), 10);
   return Number.isFinite(points) ? points : 0;
 }
