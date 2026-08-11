@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "AceTrack",
+    "slug": "acetrack",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#1e2b11"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.acetrack.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "AceTrack needs your location to find nearby tennis courts and local players to challenge.",
+        "NSCameraUsageDescription": "AceTrack needs camera access to take your player profile picture.",
+        "NSPhotoLibraryUsageDescription": "AceTrack needs photo library access to upload your player profile picture."
+      }
+    },
+    "android": {
+      "package": "com.acetrack.app",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE"
+      ]
+    }
+  }
+}
