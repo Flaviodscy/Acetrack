@@ -1,17 +1,54 @@
-import React, { useState } from "react";
-import { View, Text, TouchableOpacity, Alert } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, TouchableOpacity, Alert, Modal, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Speech from "expo-speech";
-import { RotateCcw, Volume2, CheckCircle2, Award } from "lucide-react-native";
+import { RotateCcw, Volume2, CheckCircle2, Award, Zap, Flame, UserCheck } from "lucide-react-native";
 import { createMatch, scorePoint, getPointLabel, type MatchState } from "../lib/tennisScoring";
+import { getFirebaseDb } from "../backend/firebaseClient";
+import { Storage } from "../lib/storage";
 import MatchValidateScreen from "./MatchValidateScreen";
 
-export default function LiveMatchScreen() {
-  const [match, setMatch] = useState<MatchState>(() => createMatch("Flavio", "Opponent", 2));
+export default function LiveMatchScreen({ navigation }: any) {
+  const [player1Name, setPlayer1Name] = useState("Flavio Gorodscy");
+  const [player2Name, setPlayer2Name] = useState("Opponent");
+  const [match, setMatch] = useState<MatchState>(() => createMatch(player1Name, player2Name, 2));
+  const [matchId, setMatchId] = useState<string | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [showValidation, setShowValidation] = useState(false);
+  const [matchStats, setMatchStats] = useState({
+    aces: [0, 0] as [number, number],
+    winners: [0, 0] as [number, number],
+  });
 
-  const announce = (text: string) => {
+  // Sync live score to Firestore
+  const syncLiveMatchToFirestore = async (state: MatchState, currentStats = matchStats) => {
+    try {
+      const db = await getFirebaseDb();
+      const currentUid = (await Storage.getItem<string>("acetrack:uid", "")) || "me";
+      if (db) {
+        const { doc, setDoc } = await import("firebase/firestore");
+        const activeId = matchId || `live_${currentUid}_${Date.now()}`;
+        if (!matchId) setMatchId(activeId);
+
+        await setDoc(doc(db, "liveMatches", activeId), {
+          id: activeId,
+          creatorId: currentUid,
+          players: state.players,
+          currentSet: state.currentSet,
+          currentGame: state.currentGame,
+          sets: state.sets,
+          isComplete: state.isComplete,
+          winner: state.winner,
+          stats: currentStats,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+      }
+    } catch (err) {
+      console.warn("Live match sync error:", err);
+    }
+  };
+
+  const announceScore = (text: string) => {
     if (voiceEnabled) {
       Speech.speak(text, { language: "en-US", pitch: 0.95, rate: 0.95 });
     }
@@ -22,25 +59,49 @@ export default function LiveMatchScreen() {
 
     const next = scorePoint(match, playerIndex);
     setMatch(next);
+    syncLiveMatchToFirestore(next);
 
-    // Live Voice Umpire Call
+    // Dynamic Voice Calls
     if (next.isComplete) {
-      announce(`Game, set, and match: ${next.winner}!`);
+      announceScore(`Game, set, and match: ${next.winner}!`);
       setShowValidation(true);
     } else {
       const p1 = getPointLabel(next.currentGame.points, 0, 1, next.currentGame.isTiebreak);
       const p2 = getPointLabel(next.currentGame.points, 1, 0, next.currentGame.isTiebreak);
-      if (p1 === "AD") announce("Advantage Flavio");
-      else if (p2 === "AD") announce("Advantage Opponent");
-      else if (p1 === "40" && p2 === "40") announce("Deuce");
-      else announce(`${p1}, ${p2}`);
+      if (p1 === "AD") announceScore(`Advantage ${match.players[0]}`);
+      else if (p2 === "AD") announceScore(`Advantage ${match.players[1]}`);
+      else if (p1 === "40" && p2 === "40") announceScore("Deuce");
+      else if (p1 === "0" && p2 === "0") announceScore(`Game ${next.players[playerIndex]}`);
+      else announceScore(`${p1}, ${p2}`);
     }
   };
 
+  const recordStat = (type: "aces" | "winners", playerIndex: 0 | 1) => {
+    const updated = {
+      ...matchStats,
+      [type]: [
+        playerIndex === 0 ? matchStats[type][0] + 1 : matchStats[type][0],
+        playerIndex === 1 ? matchStats[type][1] + 1 : matchStats[type][1],
+      ] as [number, number],
+    };
+    setMatchStats(updated);
+    handleScore(playerIndex);
+    announceScore(type === "aces" ? `Ace by ${match.players[playerIndex]}!` : `Winner by ${match.players[playerIndex]}!`);
+  };
+
   const handleReset = () => {
-    Alert.alert("Restart Match", "Are you sure you want to reset the current match?", [
+    Alert.alert("Restart Match", "Are you sure you want to reset the live score?", [
       { text: "Cancel", style: "cancel" },
-      { text: "Reset", style: "destructive", onPress: () => setMatch(createMatch("Flavio", "Opponent", 2)) },
+      {
+        text: "Reset",
+        style: "destructive",
+        onPress: () => {
+          const fresh = createMatch(player1Name, player2Name, 2);
+          setMatch(fresh);
+          setMatchStats({ aces: [0, 0], winners: [0, 0] });
+          syncLiveMatchToFirestore(fresh, { aces: [0, 0], winners: [0, 0] });
+        },
+      },
     ]);
   };
 
@@ -48,9 +109,12 @@ export default function LiveMatchScreen() {
     return (
       <MatchValidateScreen
         match={match}
+        matchStats={matchStats}
         onConfirmed={() => {
           setShowValidation(false);
-          setMatch(createMatch("Flavio", "Opponent", 2));
+          const fresh = createMatch(player1Name, player2Name, 2);
+          setMatch(fresh);
+          setMatchStats({ aces: [0, 0], winners: [0, 0] });
         }}
       />
     );
@@ -63,7 +127,10 @@ export default function LiveMatchScreen() {
     <SafeAreaView className="flex-1 bg-tennis-surface p-5 justify-between">
       {/* Header controls */}
       <View className="flex-row justify-between items-center py-2">
-        <Text className="text-xl font-black text-tennis-dark tracking-wider">ACETRACK LIVE</Text>
+        <View>
+          <Text className="text-xs font-black text-tennis-sub uppercase tracking-wider">OFFICIAL COURT 1</Text>
+          <Text className="text-xl font-black text-tennis-dark">LIVE SCOREBOARD</Text>
+        </View>
         <View className="flex-row space-x-2">
           <TouchableOpacity
             onPress={() => setVoiceEnabled(!voiceEnabled)}
@@ -77,56 +144,94 @@ export default function LiveMatchScreen() {
         </View>
       </View>
 
-      {/* Set Scores Bar */}
+      {/* Set & Games Bar */}
       <View className="bg-white p-4 rounded-3xl border border-tennis-border flex-row justify-around shadow-sm">
         <View className="items-center">
           <Text className="text-tennis-sub text-xs font-bold">{match.players[0]}</Text>
           <Text className="text-3xl font-black text-tennis-dark mt-1">{match.currentSet.games[0]}</Text>
+          <Text className="text-[10px] text-tennis-lime font-black bg-tennis-dark px-2 py-0.5 rounded-full mt-1">
+            {matchStats.aces[0]} Aces · {matchStats.winners[0]} W
+          </Text>
         </View>
         <View className="items-center justify-center">
           <View className="bg-tennis-surface px-3 py-1 rounded-full">
-            <Text className="text-[10px] font-black text-tennis-sub uppercase">GAMES</Text>
+            <Text className="text-[10px] font-black text-tennis-sub uppercase tracking-widest">SET {match.currentSetIndex + 1}</Text>
           </View>
         </View>
         <View className="items-center">
           <Text className="text-tennis-sub text-xs font-bold">{match.players[1]}</Text>
           <Text className="text-3xl font-black text-tennis-dark mt-1">{match.currentSet.games[1]}</Text>
+          <Text className="text-[10px] text-tennis-sub font-black bg-gray-100 px-2 py-0.5 rounded-full mt-1">
+            {matchStats.aces[1]} Aces · {matchStats.winners[1]} W
+          </Text>
         </View>
       </View>
 
       {/* Big Touch Score Buttons */}
-      <View className="flex-1 my-4 space-y-4 justify-center">
-        {/* Player 1 (You) Button */}
+      <View className="flex-1 my-3 space-y-3 justify-center">
+        {/* Player 1 (You) Pad */}
         <TouchableOpacity
           activeOpacity={0.88}
           onPress={() => handleScore(0)}
-          className="flex-1 bg-tennis-dark rounded-3xl p-6 justify-between items-center shadow-xl border-2 border-tennis-lime"
+          className="flex-1 bg-tennis-dark rounded-3xl p-5 justify-between items-center shadow-xl border-2 border-tennis-lime"
         >
-          <Text className="text-tennis-lime font-extrabold text-base">{match.players[0]} (Tap to Score)</Text>
+          <View className="flex-row justify-between w-full items-center">
+            <Text className="text-tennis-lime font-black text-base">{match.players[0]}</Text>
+            <View className="flex-row space-x-2">
+              <TouchableOpacity
+                onPress={() => recordStat("aces", 0)}
+                className="bg-tennis-lime/20 px-3 py-1 rounded-full border border-tennis-lime"
+              >
+                <Text className="text-tennis-lime font-black text-[10px]">+ ACE</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => recordStat("winners", 0)}
+                className="bg-tennis-lime/20 px-3 py-1 rounded-full border border-tennis-lime"
+              >
+                <Text className="text-tennis-lime font-black text-[10px]">+ WINNER</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
           <Text className="text-white font-black text-8xl">{p1Points}</Text>
-          <Text className="text-white/60 text-[10px] font-bold uppercase tracking-widest">POINTS</Text>
+          <Text className="text-white/60 text-[10px] font-bold uppercase tracking-widest">TAP TO SCORE POINT</Text>
         </TouchableOpacity>
 
-        {/* Player 2 (Opponent) Button */}
+        {/* Player 2 (Opponent) Pad */}
         <TouchableOpacity
           activeOpacity={0.88}
           onPress={() => handleScore(1)}
-          className="flex-1 bg-white rounded-3xl p-6 justify-between items-center shadow-md border border-tennis-border"
+          className="flex-1 bg-white rounded-3xl p-5 justify-between items-center shadow-md border border-tennis-border"
         >
-          <Text className="text-tennis-dark font-extrabold text-base">{match.players[1]}</Text>
+          <View className="flex-row justify-between w-full items-center">
+            <Text className="text-tennis-dark font-black text-base">{match.players[1]}</Text>
+            <View className="flex-row space-x-2">
+              <TouchableOpacity
+                onPress={() => recordStat("aces", 1)}
+                className="bg-gray-100 px-3 py-1 rounded-full border border-gray-300"
+              >
+                <Text className="text-tennis-dark font-black text-[10px]">+ ACE</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => recordStat("winners", 1)}
+                className="bg-gray-100 px-3 py-1 rounded-full border border-gray-300"
+              >
+                <Text className="text-tennis-dark font-black text-[10px]">+ WINNER</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
           <Text className="text-tennis-dark font-black text-8xl">{p2Points}</Text>
-          <Text className="text-tennis-sub text-[10px] font-bold uppercase tracking-widest">POINTS</Text>
+          <Text className="text-tennis-sub text-[10px] font-bold uppercase tracking-widest">TAP TO SCORE POINT</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Finish / Validate trigger */}
+      {/* Finish & Validate Button */}
       <TouchableOpacity
         activeOpacity={0.85}
         onPress={() => setShowValidation(true)}
         className="bg-tennis-lime py-4 rounded-2xl flex-row items-center justify-center space-x-2 shadow-sm"
       >
         <CheckCircle2 size={20} color="#1e2b11" />
-        <Text className="text-tennis-dark font-black text-base">Validate Match & Save</Text>
+        <Text className="text-tennis-dark font-black text-base">Validate Match Result</Text>
       </TouchableOpacity>
     </SafeAreaView>
   );
