@@ -5,10 +5,6 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#1e2b11"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.acetrack.app",
