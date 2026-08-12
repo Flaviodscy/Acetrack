@@ -9,9 +9,12 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.acetrack.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "AceTrack needs your location to find nearby tennis courts and local players to challenge.",
-        "NSCameraUsageDescription": "AceTrack needs camera access to take your player profile picture.",
-        "NSPhotoLibraryUsageDescription": "AceTrack needs photo library access to upload your player profile picture."
+        "NSLocationWhenInUseUsageDescription": "AceTrack needs your GPS location to find tennis courts and nearby players to challenge.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "AceTrack needs GPS location for live court navigation and radar matching.",
+        "NSCameraUsageDescription": "AceTrack needs camera access to take your player profile photo.",
+        "NSPhotoLibraryUsageDescription": "AceTrack needs photo library access to upload your player card avatar.",
+        "NSHealthShareUsageDescription": "AceTrack needs read access to your Heart Rate and workout biometrics during tennis matches.",
+        "NSHealthUpdateUsageDescription": "AceTrack saves your tennis matches as official workouts in Apple Health."
       }
     },
     "android": {
@@ -20,7 +23,9 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "CAMERA",
-        "READ_EXTERNAL_STORAGE"
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "BODY_SENSORS"
       ]
     }
   }
