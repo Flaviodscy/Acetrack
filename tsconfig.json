@@ -22,6 +22,7 @@
   },
   "include": [
     "src",
+    "nativewind-env.d.ts",
     "vite.config.ts"
   ],
   "extends": "expo/tsconfig.base"

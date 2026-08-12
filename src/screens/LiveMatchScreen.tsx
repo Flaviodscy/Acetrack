@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, TouchableOpacity, Alert, Modal, TextInput } from "react-native";
+import React, { useState } from "react";
+import { View, Text, TouchableOpacity, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Speech from "expo-speech";
-import { RotateCcw, Volume2, CheckCircle2, Award, Zap, Flame, UserCheck } from "lucide-react-native";
-import { createMatch, scorePoint, getPointLabel, type MatchState } from "../lib/tennisScoring";
+import { RotateCcw, Volume2, CheckCircle2 } from "lucide-react-native";
+import { createMatch, scorePoint, getPointDisplay, getFinalScore, type MatchState } from "../lib/tennisScoring";
 import { getFirebaseDb } from "../backend/firebaseClient";
 import { Storage } from "../lib/storage";
 import MatchValidateScreen from "./MatchValidateScreen";
@@ -11,7 +11,7 @@ import MatchValidateScreen from "./MatchValidateScreen";
 export default function LiveMatchScreen({ navigation }: any) {
   const [player1Name, setPlayer1Name] = useState("Flavio Gorodscy");
   const [player2Name, setPlayer2Name] = useState("Opponent");
-  const [match, setMatch] = useState<MatchState>(() => createMatch(player1Name, player2Name, 2));
+  const [match, setMatch] = useState<MatchState>(() => createMatch([player1Name, player2Name]));
   const [matchId, setMatchId] = useState<string | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [showValidation, setShowValidation] = useState(false);
@@ -20,7 +20,6 @@ export default function LiveMatchScreen({ navigation }: any) {
     winners: [0, 0] as [number, number],
   });
 
-  // Sync live score to Firestore
   const syncLiveMatchToFirestore = async (state: MatchState, currentStats = matchStats) => {
     try {
       const db = await getFirebaseDb();
@@ -34,11 +33,10 @@ export default function LiveMatchScreen({ navigation }: any) {
           id: activeId,
           creatorId: currentUid,
           players: state.players,
+          pointScore: state.pointScore,
           currentSet: state.currentSet,
-          currentGame: state.currentGame,
           sets: state.sets,
-          isComplete: state.isComplete,
-          winner: state.winner,
+          winner: state.winner !== undefined ? state.players[state.winner] : null,
           stats: currentStats,
           updatedAt: new Date().toISOString(),
         }, { merge: true });
@@ -55,22 +53,22 @@ export default function LiveMatchScreen({ navigation }: any) {
   };
 
   const handleScore = (playerIndex: 0 | 1) => {
-    if (match.isComplete) return;
+    if (match.winner !== undefined) return;
 
     const next = scorePoint(match, playerIndex);
     setMatch(next);
     syncLiveMatchToFirestore(next);
 
-    // Dynamic Voice Calls
-    if (next.isComplete) {
-      announceScore(`Game, set, and match: ${next.winner}!`);
+    const [p1, p2] = getPointDisplay(next);
+
+    // Dynamic Voice Announcements
+    if (next.winner !== undefined) {
+      announceScore(`Game, set, and match: ${next.players[next.winner]}!`);
       setShowValidation(true);
     } else {
-      const p1 = getPointLabel(next.currentGame.points, 0, 1, next.currentGame.isTiebreak);
-      const p2 = getPointLabel(next.currentGame.points, 1, 0, next.currentGame.isTiebreak);
-      if (p1 === "AD") announceScore(`Advantage ${match.players[0]}`);
-      else if (p2 === "AD") announceScore(`Advantage ${match.players[1]}`);
-      else if (p1 === "40" && p2 === "40") announceScore("Deuce");
+      if (p1 === "AD") announceScore(`Advantage ${next.players[0]}`);
+      else if (p2 === "AD") announceScore(`Advantage ${next.players[1]}`);
+      else if (p1 === "DEUCE" && p2 === "DEUCE") announceScore("Deuce");
       else if (p1 === "0" && p2 === "0") announceScore(`Game ${next.players[playerIndex]}`);
       else announceScore(`${p1}, ${p2}`);
     }
@@ -96,7 +94,7 @@ export default function LiveMatchScreen({ navigation }: any) {
         text: "Reset",
         style: "destructive",
         onPress: () => {
-          const fresh = createMatch(player1Name, player2Name, 2);
+          const fresh = createMatch([player1Name, player2Name]);
           setMatch(fresh);
           setMatchStats({ aces: [0, 0], winners: [0, 0] });
           syncLiveMatchToFirestore(fresh, { aces: [0, 0], winners: [0, 0] });
@@ -112,7 +110,7 @@ export default function LiveMatchScreen({ navigation }: any) {
         matchStats={matchStats}
         onConfirmed={() => {
           setShowValidation(false);
-          const fresh = createMatch(player1Name, player2Name, 2);
+          const fresh = createMatch([player1Name, player2Name]);
           setMatch(fresh);
           setMatchStats({ aces: [0, 0], winners: [0, 0] });
         }}
@@ -120,8 +118,7 @@ export default function LiveMatchScreen({ navigation }: any) {
     );
   }
 
-  const p1Points = getPointLabel(match.currentGame.points, 0, 1, match.currentGame.isTiebreak);
-  const p2Points = getPointLabel(match.currentGame.points, 1, 0, match.currentGame.isTiebreak);
+  const [p1Points, p2Points] = getPointDisplay(match);
 
   return (
     <SafeAreaView className="flex-1 bg-tennis-surface p-5 justify-between">
@@ -155,7 +152,9 @@ export default function LiveMatchScreen({ navigation }: any) {
         </View>
         <View className="items-center justify-center">
           <View className="bg-tennis-surface px-3 py-1 rounded-full">
-            <Text className="text-[10px] font-black text-tennis-sub uppercase tracking-widest">SET {match.currentSetIndex + 1}</Text>
+            <Text className="text-[10px] font-black text-tennis-sub uppercase tracking-widest">
+              SET {match.sets.length + 1}
+            </Text>
           </View>
         </View>
         <View className="items-center">
