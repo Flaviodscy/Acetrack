@@ -1,6 +1,6 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Home, MapPin, Users, Play, User, Watch, Sparkles, BrainCircuit, Trophy } from "lucide-react-native";
+import { Home, MapPin, Users, Play, User, Watch, Sparkles, BrainCircuit, Trophy, BarChart3 } from "lucide-react-native";
 
 import HomeScreen from "../screens/HomeScreen";
 import CourtFinderScreen from "../screens/CourtFinderScreen";
@@ -11,6 +11,7 @@ import WatchWorkoutScreen from "../screens/WatchWorkoutScreen";
 import MatchPosterScreen from "../screens/MatchPosterScreen";
 import AiCoachScreen from "../screens/AiCoachScreen";
 import LadderRankingsScreen from "../screens/LadderRankingsScreen";
+import MatchAnalyticsScreen from "../screens/MatchAnalyticsScreen";
 
 const Tab = createBottomTabNavigator();
 
@@ -29,7 +30,7 @@ export default function RootNavigator() {
           paddingTop: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 9.5,
           fontWeight: "800",
         },
       }}
@@ -39,7 +40,7 @@ export default function RootNavigator() {
         component={HomeScreen}
         options={{
           tabBarLabel: "Home",
-          tabBarIcon: ({ color, size }) => <Home color={color} size={20} />,
+          tabBarIcon: ({ color, size }) => <Home color={color} size={19} />,
         }}
       />
       <Tab.Screen
@@ -47,7 +48,7 @@ export default function RootNavigator() {
         component={CourtFinderScreen}
         options={{
           tabBarLabel: "Courts",
-          tabBarIcon: ({ color, size }) => <MapPin color={color} size={20} />,
+          tabBarIcon: ({ color, size }) => <MapPin color={color} size={19} />,
         }}
       />
       <Tab.Screen
@@ -55,7 +56,7 @@ export default function RootNavigator() {
         component={LiveMatchScreen}
         options={{
           tabBarLabel: "Score",
-          tabBarIcon: ({ color, size }) => <Play color={color} size={20} />,
+          tabBarIcon: ({ color, size }) => <Play color={color} size={19} />,
         }}
       />
       <Tab.Screen
@@ -63,7 +64,15 @@ export default function RootNavigator() {
         component={LadderRankingsScreen}
         options={{
           tabBarLabel: "Ladder",
-          tabBarIcon: ({ color, size }) => <Trophy color={color} size={20} />,
+          tabBarIcon: ({ color, size }) => <Trophy color={color} size={19} />,
+        }}
+      />
+      <Tab.Screen
+        name="Stats"
+        component={MatchAnalyticsScreen}
+        options={{
+          tabBarLabel: "Stats",
+          tabBarIcon: ({ color, size }) => <BarChart3 color={color} size={19} />,
         }}
       />
       <Tab.Screen
@@ -71,7 +80,7 @@ export default function RootNavigator() {
         component={AiCoachScreen}
         options={{
           tabBarLabel: "AI Coach",
-          tabBarIcon: ({ color, size }) => <BrainCircuit color={color} size={20} />,
+          tabBarIcon: ({ color, size }) => <BrainCircuit color={color} size={19} />,
         }}
       />
       <Tab.Screen
@@ -79,7 +88,7 @@ export default function RootNavigator() {
         component={MatchPosterScreen}
         options={{
           tabBarLabel: "Poster",
-          tabBarIcon: ({ color, size }) => <Sparkles color={color} size={20} />,
+          tabBarIcon: ({ color, size }) => <Sparkles color={color} size={19} />,
         }}
       />
       <Tab.Screen
@@ -87,7 +96,7 @@ export default function RootNavigator() {
         component={WatchWorkoutScreen}
         options={{
           tabBarLabel: "Watch",
-          tabBarIcon: ({ color, size }) => <Watch color={color} size={20} />,
+          tabBarIcon: ({ color, size }) => <Watch color={color} size={19} />,
         }}
       />
       <Tab.Screen
@@ -95,11 +104,12 @@ export default function RootNavigator() {
         component={ProfileScreen}
         options={{
           tabBarLabel: "Profile",
-          tabBarIcon: ({ color, size }) => <User color={color} size={20} />,
+          tabBarIcon: ({ color, size }) => <User color={color} size={19} />,
         }}
       />
     </Tab.Navigator>
   );
 }
+
 
 
