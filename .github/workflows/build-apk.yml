@@ -1,0 +1,43 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🏗 Checkout repo
+        uses: actions/checkout@v4
+
+      - name: ☕ Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: 🟢 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: "npm"
+
+      - name: 📦 Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: ⚙️ Setup Expo and Prebuild Android
+        run: |
+          npx expo prebuild --platform android --clean
+
+      - name: 🔨 Build Android Release APK
+        working-directory: android
+        run: |
+          ./gradlew assembleRelease --no-daemon
+
+      - name: 📤 Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AceTrack-Release-APK
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
