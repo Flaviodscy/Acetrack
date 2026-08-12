@@ -1,12 +1,14 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Home, MapPin, Users, Play, User } from "lucide-react-native";
+import { Home, MapPin, Users, Play, User, Watch, Sparkles } from "lucide-react-native";
 
 import HomeScreen from "../screens/HomeScreen";
 import CourtFinderScreen from "../screens/CourtFinderScreen";
 import UserMapScreen from "../screens/UserMapScreen";
 import LiveMatchScreen from "../screens/LiveMatchScreen";
 import ProfileScreen from "../screens/ProfileScreen";
+import WatchWorkoutScreen from "../screens/WatchWorkoutScreen";
+import MatchPosterScreen from "../screens/MatchPosterScreen";
 
 const Tab = createBottomTabNavigator();
 
@@ -63,6 +65,22 @@ export default function RootNavigator() {
         }}
       />
       <Tab.Screen
+        name="Poster"
+        component={MatchPosterScreen}
+        options={{
+          tabBarLabel: "Poster",
+          tabBarIcon: ({ color, size }) => <Sparkles color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="Watch"
+        component={WatchWorkoutScreen}
+        options={{
+          tabBarLabel: "Watch",
+          tabBarIcon: ({ color, size }) => <Watch color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
         name="Profile"
         component={ProfileScreen}
         options={{
@@ -73,3 +91,4 @@ export default function RootNavigator() {
     </Tab.Navigator>
   );
 }
+
