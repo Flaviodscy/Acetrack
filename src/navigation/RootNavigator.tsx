@@ -1,6 +1,6 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { Home, MapPin, Users, Play, User, Watch, Sparkles } from "lucide-react-native";
+import { Home, MapPin, Users, Play, User, Watch, Sparkles, BrainCircuit, Trophy } from "lucide-react-native";
 
 import HomeScreen from "../screens/HomeScreen";
 import CourtFinderScreen from "../screens/CourtFinderScreen";
@@ -9,6 +9,8 @@ import LiveMatchScreen from "../screens/LiveMatchScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import WatchWorkoutScreen from "../screens/WatchWorkoutScreen";
 import MatchPosterScreen from "../screens/MatchPosterScreen";
+import AiCoachScreen from "../screens/AiCoachScreen";
+import LadderRankingsScreen from "../screens/LadderRankingsScreen";
 
 const Tab = createBottomTabNavigator();
 
@@ -22,13 +24,13 @@ export default function RootNavigator() {
         tabBarStyle: {
           backgroundColor: "#ffffff",
           borderTopColor: "rgba(38, 54, 31, 0.08)",
-          height: 64,
+          height: 66,
           paddingBottom: 10,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "700",
+          fontSize: 10,
+          fontWeight: "800",
         },
       }}
     >
@@ -37,7 +39,7 @@ export default function RootNavigator() {
         component={HomeScreen}
         options={{
           tabBarLabel: "Home",
-          tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Home color={color} size={20} />,
         }}
       />
       <Tab.Screen
@@ -45,23 +47,31 @@ export default function RootNavigator() {
         component={CourtFinderScreen}
         options={{
           tabBarLabel: "Courts",
-          tabBarIcon: ({ color, size }) => <MapPin color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <MapPin color={color} size={20} />,
         }}
       />
       <Tab.Screen
         name="Live"
         component={LiveMatchScreen}
         options={{
-          tabBarLabel: "Play",
-          tabBarIcon: ({ color, size }) => <Play color={color} size={size} />,
+          tabBarLabel: "Score",
+          tabBarIcon: ({ color, size }) => <Play color={color} size={20} />,
         }}
       />
       <Tab.Screen
-        name="Players"
-        component={UserMapScreen}
+        name="Ladder"
+        component={LadderRankingsScreen}
         options={{
-          tabBarLabel: "Players",
-          tabBarIcon: ({ color, size }) => <Users color={color} size={size} />,
+          tabBarLabel: "Ladder",
+          tabBarIcon: ({ color, size }) => <Trophy color={color} size={20} />,
+        }}
+      />
+      <Tab.Screen
+        name="Coach"
+        component={AiCoachScreen}
+        options={{
+          tabBarLabel: "AI Coach",
+          tabBarIcon: ({ color, size }) => <BrainCircuit color={color} size={20} />,
         }}
       />
       <Tab.Screen
@@ -69,7 +79,7 @@ export default function RootNavigator() {
         component={MatchPosterScreen}
         options={{
           tabBarLabel: "Poster",
-          tabBarIcon: ({ color, size }) => <Sparkles color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Sparkles color={color} size={20} />,
         }}
       />
       <Tab.Screen
@@ -77,7 +87,7 @@ export default function RootNavigator() {
         component={WatchWorkoutScreen}
         options={{
           tabBarLabel: "Watch",
-          tabBarIcon: ({ color, size }) => <Watch color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <Watch color={color} size={20} />,
         }}
       />
       <Tab.Screen
@@ -85,10 +95,11 @@ export default function RootNavigator() {
         component={ProfileScreen}
         options={{
           tabBarLabel: "Profile",
-          tabBarIcon: ({ color, size }) => <User color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <User color={color} size={20} />,
         }}
       />
     </Tab.Navigator>
   );
 }
+
 
