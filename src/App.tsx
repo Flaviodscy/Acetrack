@@ -1924,12 +1924,12 @@ function LiveMatchScreen({
       <div className="live-score-stage">
         <div className={server === 0 ? "live-side-name left serving" : "live-side-name left"}>
           <strong>{sideLabels[0]}</strong>
-          {server === 0 && <span>Serving</span>}
+          {server === 0 && <span className="serving-badge">Serving</span>}
         </div>
         <TennisBall />
         <div className={server === 1 ? "live-side-name right serving" : "live-side-name right"}>
           <strong>{sideLabels[1]}</strong>
-          {server === 1 && <span>Serving</span>}
+          {server === 1 && <span className="serving-badge">Serving</span>}
         </div>
         <div className={scoreClassA}>{pointDisplay[0]}</div>
         <div className={scoreClassB}>{pointDisplay[1]}</div>

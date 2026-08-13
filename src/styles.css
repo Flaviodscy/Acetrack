@@ -2675,7 +2675,11 @@ button {
   }
 
   .live-screen .match-action {
-    min-height: clamp(78px, 17vh, 104px);
+    min-height: clamp(90px, 19vh, 120px);
+  }
+  .live-screen .match-action.primary,
+  .live-screen .match-action.opponent {
+    min-height: clamp(110px, 24vh, 150px);
   }
 }
 
@@ -4875,6 +4879,20 @@ h1,
   text-transform: uppercase;
 }
 
+.live-side-name .serving-badge {
+  display: inline-block;
+  background: #1e2b11;
+  color: var(--accent);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-top: 6px;
+  box-shadow: 0 4px 12px rgba(156,203,16,0.25);
+}
+
 .live-side-name.serving {
   background: rgba(241, 249, 195, 0.94);
   box-shadow: 0 12px 28px rgba(156, 203, 16, 0.16);
@@ -4890,10 +4908,10 @@ h1,
 
 .stage-score {
   color: #17243d;
-  font-size: clamp(8.5rem, 36vw, 13.5rem);
+  font-size: clamp(9rem, 38vw, 14.5rem);
   font-weight: 950;
-  letter-spacing: 0;
-  line-height: 0.8;
+  letter-spacing: -0.02em;
+  line-height: 0.82;
   text-align: center;
 }
 
@@ -7192,14 +7210,14 @@ body,
 }
 
 .phone-frame.is-live .live-screen .match-action {
-  min-height: 66px;
-  padding: 9px 6px;
-  border-radius: 20px;
+  min-height: 78px;
+  padding: 10px 8px;
+  border-radius: 22px;
 }
 
 .phone-frame.is-live .live-screen .match-action .action-icon {
-  width: 42px;
-  height: 42px;
+  width: 48px;
+  height: 48px;
 }
 
 .phone-frame.is-live .live-screen .action-label {
@@ -13873,6 +13891,15 @@ input {
   100% {
     r: 24;
     opacity: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .live-screen > .set-table {
+    display: none;
+  }
+  .live-screen .voice-command-panel {
+    display: none;
   }
 }
 
