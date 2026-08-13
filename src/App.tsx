@@ -5866,10 +5866,10 @@ function createShareCardSvg(
 
   const offset = ratio === "9:16" ? 300 : 0;
   const cardY = 320 + offset;
-  const cardHeight = ratio === "1:1" ? 580 : 1080;
-  const scoreY = cardY + cardHeight + 60;
-  const winnerBadgeY = scoreY + 6;
-  const footerY = height - 60;
+  const cardHeight = ratio === "1:1" ? 580 : 1200;
+  const scoreY = cardY + cardHeight + 40;
+  const winnerBadgeY = scoreY + 10;
+  const footerY = height - 80;
 
   // AI Commentary Selection
   let commentaryText = "";
