@@ -5866,7 +5866,7 @@ function createShareCardSvg(
 
   const offset = ratio === "9:16" ? 300 : 0;
   const cardY = 320 + offset;
-  const cardHeight = ratio === "1:1" ? 580 : 1200;
+  const cardHeight = ratio === "1:1" ? 700 : 1200;
   const scoreY = cardY + cardHeight + 40;
   const winnerBadgeY = scoreY + 10;
   const footerY = height - 80;
