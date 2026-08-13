@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, Alert, Share, Image } from "r
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Sparkles, Share2, Flame, Trophy, Swords, Zap, ArrowLeft, RefreshCw, Award } from "lucide-react-native";
 import { Storage } from "../lib/storage";
+import { generateMatchPoster } from "../lib/metaAiPoster";
 
 interface Props {
   route?: any;
@@ -12,6 +13,7 @@ interface Props {
 export default function MatchPosterScreen({ route, navigation }: Props) {
   const [styleTone, setStyleTone] = useState<"UFC" | "CYBER" | "VINTAGE" | "CHAMPION">("UFC");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [posterImage, setPosterImage] = useState<string | null>(null);
   const [posterData, setPosterData] = useState({
     winner: "Flavio Gorodscy",
     loser: "Opponent",
@@ -50,12 +52,26 @@ export default function MatchPosterScreen({ route, navigation }: Props) {
     }
   };
 
-  const regenerateAiPoster = () => {
+  const regenerateAiPoster = async () => {
     setIsGenerating(true);
-    setTimeout(() => {
+    try {
+      const url = await generateMatchPoster({
+        winnerName: posterData.winner,
+        loserName: posterData.loser,
+        score: posterData.score,
+        style: styleTone,
+        aces: posterData.aces,
+        winners: posterData.winners,
+        maxServe: posterData.speed,
+      });
+      setPosterImage(url);
+      Alert.alert("AI Artwork Rendered! 🎨", `Generated ${styleTone} poster via Meta AI`);
+    } catch (e) {
+      console.warn(e);
+      Alert.alert("Generation failed", "Check VITE_META_AI_API_KEY and network");
+    } finally {
       setIsGenerating(false);
-      Alert.alert("AI Artwork Rendered! 🎨", `Synthesized high-res fight card with aesthetic: ${styleTone}`);
-    }, 1000);
+    }
   };
 
   return (
@@ -179,6 +195,12 @@ export default function MatchPosterScreen({ route, navigation }: Props) {
             </View>
           </View>
         </View>
+
+        {posterImage && (
+          <View className="mb-6">
+            <Image source={{ uri: posterImage }} className="w-full h-[400] rounded-3xl border-2 border-tennis-lime" resizeMode="cover" />
+          </View>
+        )}
 
         {/* Action Row */}
         <View className="space-y-3 mb-12">
