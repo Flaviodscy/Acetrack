@@ -1,33 +1,23 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, Image, ScrollView, Alert, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
-import { Camera, Save, Trophy, Shield, Dumbbell, Award, Flame, User } from "lucide-react-native";
-import { Storage } from "../lib/storage";
-import { getFirebaseDb, getFirebaseAuth } from "../backend/firebaseClient";
+import { Camera, Save } from "lucide-react-native";
+import { usePlayerProfile } from "../hooks/usePlayerProfile";
+import type { UserProfile } from "../types/domain";
 
 export default function ProfileScreen() {
-  const [name, setName] = useState("Flavio Gorodscy");
-  const [rating, setRating] = useState("4.5 UTR");
-  const [level, setLevel] = useState("14");
-  const [height, setHeight] = useState("6'1\"");
-  const [racket, setRacket] = useState("Babolat Pure Aero 98 (305g)");
+  const { profile, loading, saveProfile } = usePlayerProfile();
+  const [draft, setDraft] = useState<UserProfile | null>(null);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      const cached = await Storage.getItem<any>("acetrack:profile", null);
-      if (cached) {
-        if (cached.name) setName(cached.name);
-        if (cached.rating) setRating(cached.rating);
-        if (cached.level) setLevel(String(cached.level));
-        if (cached.height) setHeight(cached.height);
-        if (cached.racket) setRacket(cached.racket);
-        if (cached.photoUri) setPhotoUri(cached.photoUri);
-      }
-    })();
-  }, []);
+    if (!loading) {
+      setDraft(profile);
+      setPhotoUri(profile.photoDataUrl ?? null);
+    }
+  }, [loading, profile]);
 
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -49,52 +39,56 @@ export default function ProfileScreen() {
   };
 
   const handleSave = async () => {
+    if (!draft) return;
+
     setIsSaving(true);
-    const profilePayload = {
-      name,
-      rating,
-      level: Number(level) || 14,
-      height,
-      racket,
-      photoUri,
-      updatedAt: new Date().toISOString(),
+    const nextProfile: UserProfile = {
+      ...draft,
+      shortName: draft.name.split(" ")[0] || draft.shortName,
+      avatar: draft.name.slice(0, 2).toUpperCase() || draft.avatar,
+      photoDataUrl: photoUri ?? draft.photoDataUrl,
+      equipment: {
+        ...draft.equipment,
+        racket: draft.equipment.racket
+      }
     };
 
     try {
-      // 1. Save locally to AsyncStorage
-      await Storage.setItem("acetrack:profile", profilePayload);
-
-      // 2. Sync to Firestore /users/{uid}
-      const db = await getFirebaseDb();
-      const currentUid = (await Storage.getItem<string>("acetrack:uid", "")) || "me";
-
-      if (db && currentUid) {
-        const { doc, setDoc } = await import("firebase/firestore");
-        await setDoc(doc(db, "users", currentUid), profilePayload, { merge: true });
-      }
-
-      Alert.alert("Profile Saved 🎾", "Your AceTrack Player Card is updated on the live ladder!");
-    } catch (e) {
-      console.warn("Profile save error:", e);
-      Alert.alert("Saved Locally!", "Profile updated on your device.");
+      const result = await saveProfile(nextProfile);
+      Alert.alert(
+        "Profile Saved",
+        result.mode === "firebase"
+          ? "Your AceTrack player card is synced to Firebase."
+          : "Profile saved on this device. Sign in to sync across devices."
+      );
+    } catch (error) {
+      console.warn("Profile save error:", error);
+      Alert.alert("Save failed", "Could not update your profile. Try again.");
     } finally {
       setIsSaving(false);
     }
   };
+
+  if (loading || !draft) {
+    return (
+      <SafeAreaView className="flex-1 bg-tennis-surface items-center justify-center">
+        <ActivityIndicator size="large" color="#1e2b11" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView className="flex-1 bg-tennis-surface">
       <ScrollView className="p-5" showsVerticalScrollIndicator={false}>
         <Text className="text-2xl font-black text-tennis-dark mb-6">Player Profile</Text>
 
-        {/* Profile Avatar with Camera Picker */}
         <View className="items-center mb-6">
           <TouchableOpacity activeOpacity={0.8} onPress={pickImage} className="relative">
             <View className="w-28 h-28 rounded-full bg-tennis-lime items-center justify-center overflow-hidden border-4 border-white shadow-xl">
               {photoUri ? (
                 <Image source={{ uri: photoUri }} className="w-full h-full" />
               ) : (
-                <Text className="text-3xl font-black text-tennis-dark">FG</Text>
+                <Text className="text-3xl font-black text-tennis-dark">{draft.avatar}</Text>
               )}
             </View>
             <View className="absolute bottom-0 right-0 bg-tennis-dark p-2.5 rounded-full border-2 border-white shadow-md">
@@ -104,13 +98,12 @@ export default function ProfileScreen() {
           <Text className="text-xs text-tennis-sub mt-2 font-bold">Tap photo to choose avatar</Text>
         </View>
 
-        {/* Player Form Inputs */}
         <View className="bg-white p-5 rounded-3xl border border-tennis-border space-y-4 shadow-sm mb-6">
           <View>
             <Text className="text-xs font-bold text-tennis-sub mb-1 uppercase tracking-wider">Player Name</Text>
             <TextInput
-              value={name}
-              onChangeText={setName}
+              value={draft.name}
+              onChangeText={(name) => setDraft({ ...draft, name })}
               className="bg-tennis-surface p-3.5 rounded-2xl font-bold text-tennis-dark text-sm"
             />
           </View>
@@ -119,16 +112,16 @@ export default function ProfileScreen() {
             <View className="flex-1">
               <Text className="text-xs font-bold text-tennis-sub mb-1 uppercase tracking-wider">Skill Rating</Text>
               <TextInput
-                value={rating}
-                onChangeText={setRating}
+                value={draft.rating}
+                onChangeText={(rating) => setDraft({ ...draft, rating })}
                 className="bg-tennis-surface p-3.5 rounded-2xl font-bold text-tennis-dark text-sm"
               />
             </View>
             <View className="flex-1">
               <Text className="text-xs font-bold text-tennis-sub mb-1 uppercase tracking-wider">Division Level</Text>
               <TextInput
-                value={level}
-                onChangeText={setLevel}
+                value={String(draft.level)}
+                onChangeText={(level) => setDraft({ ...draft, level: Number(level) || 0 })}
                 keyboardType="numeric"
                 className="bg-tennis-surface p-3.5 rounded-2xl font-bold text-tennis-dark text-sm"
               />
@@ -136,10 +129,10 @@ export default function ProfileScreen() {
           </View>
 
           <View>
-            <Text className="text-xs font-bold text-tennis-sub mb-1 uppercase tracking-wider">Height / Size</Text>
+            <Text className="text-xs font-bold text-tennis-sub mb-1 uppercase tracking-wider">Home Club / City</Text>
             <TextInput
-              value={height}
-              onChangeText={setHeight}
+              value={draft.location}
+              onChangeText={(location) => setDraft({ ...draft, location })}
               className="bg-tennis-surface p-3.5 rounded-2xl font-bold text-tennis-dark text-sm"
             />
           </View>
@@ -147,14 +140,18 @@ export default function ProfileScreen() {
           <View>
             <Text className="text-xs font-bold text-tennis-sub mb-1 uppercase tracking-wider">Primary Racket & Specs</Text>
             <TextInput
-              value={racket}
-              onChangeText={setRacket}
+              value={draft.equipment.racket}
+              onChangeText={(racket) =>
+                setDraft({
+                  ...draft,
+                  equipment: { ...draft.equipment, racket }
+                })
+              }
               className="bg-tennis-surface p-3.5 rounded-2xl font-bold text-tennis-dark text-sm"
             />
           </View>
         </View>
 
-        {/* Save Profile Button */}
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={handleSave}

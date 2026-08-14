@@ -26,6 +26,10 @@
     ],
     "rewrites": [
       {
+        "source": "/api/**",
+        "destination": "http://localhost:5001/acetrack-flavio/us-central1/*"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

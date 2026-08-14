@@ -5,6 +5,8 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "scheme": "acetrack",
+    "main": "App.js",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.acetrack.app",

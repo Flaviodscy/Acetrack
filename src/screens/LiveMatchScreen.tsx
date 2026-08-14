@@ -1,17 +1,20 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Speech from "expo-speech";
 import { RotateCcw, Volume2, CheckCircle2 } from "lucide-react-native";
-import { createMatch, scorePoint, getPointDisplay, getFinalScore, type MatchState } from "../lib/tennisScoring";
+import { createMatch, scorePoint, getPointDisplay, type MatchState } from "../lib/tennisScoring";
 import { getFirebaseDb } from "../backend/firebaseClient";
+import { opponent } from "../data/starterData";
+import { usePlayerProfile } from "../hooks/usePlayerProfile";
 import { Storage } from "../lib/storage";
 import MatchValidateScreen from "./MatchValidateScreen";
 
 export default function LiveMatchScreen({ navigation }: any) {
-  const [player1Name, setPlayer1Name] = useState("Flavio Gorodscy");
-  const [player2Name, setPlayer2Name] = useState("Opponent");
-  const [match, setMatch] = useState<MatchState>(() => createMatch([player1Name, player2Name]));
+  const { profile, loading } = usePlayerProfile();
+  const player1Name = profile.name;
+  const player2Name = opponent.name;
+  const [match, setMatch] = useState<MatchState | null>(null);
   const [matchId, setMatchId] = useState<string | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [showValidation, setShowValidation] = useState(false);
@@ -19,6 +22,12 @@ export default function LiveMatchScreen({ navigation }: any) {
     aces: [0, 0] as [number, number],
     winners: [0, 0] as [number, number],
   });
+
+  useEffect(() => {
+    if (!loading) {
+      setMatch(createMatch([player1Name, player2Name]));
+    }
+  }, [loading, player1Name, player2Name]);
 
   const syncLiveMatchToFirestore = async (state: MatchState, currentStats = matchStats) => {
     try {
@@ -53,7 +62,7 @@ export default function LiveMatchScreen({ navigation }: any) {
   };
 
   const handleScore = (playerIndex: 0 | 1) => {
-    if (match.winner !== undefined) return;
+    if (!match || match.winner !== undefined) return;
 
     const next = scorePoint(match, playerIndex);
     setMatch(next);
@@ -75,6 +84,7 @@ export default function LiveMatchScreen({ navigation }: any) {
   };
 
   const recordStat = (type: "aces" | "winners", playerIndex: 0 | 1) => {
+    if (!match) return;
     const updated = {
       ...matchStats,
       [type]: [
@@ -102,6 +112,14 @@ export default function LiveMatchScreen({ navigation }: any) {
       },
     ]);
   };
+
+  if (!match) {
+    return (
+      <SafeAreaView className="flex-1 bg-tennis-surface items-center justify-center">
+        <Text className="text-tennis-dark font-black">Loading match...</Text>
+      </SafeAreaView>
+    );
+  }
 
   if (showValidation) {
     return (

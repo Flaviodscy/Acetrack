@@ -1,4 +1,5 @@
 import type { MatchState, SetScore } from "../lib/tennisScoring";
+import type { Timestamp } from "firebase/firestore";
 
 export type HighlightTag = "Ace" | "Rally" | "Winner" | "Match Point";
 
@@ -19,7 +20,8 @@ export type PlayerProfile = {
 export type UserProfile = {
   name: string;
   shortName: string;
-  avatar: string;
+  avatar: string; // Lucide icon name for UI
+  avatarUrl?: string; // External image URL (Telegra.ph or other host)
   photoDataUrl?: string;
   portrait: string;
   location: string;
@@ -139,3 +141,34 @@ export type MatchRecord = {
 
 export type BackendMode = "local" | "firebase";
 
+export type Tournament = {
+  id: string;
+  name: string;
+  location?: string;
+  startDate: Timestamp;
+  endDate?: Timestamp;
+  format: "round_robin" | "knockout" | "league";
+  status: "upcoming" | "ongoing" | "completed";
+  organizerUserId: string;
+  createdAt: Timestamp;
+};
+
+export type TournamentParticipant = {
+  userId: string;
+  position: number; // 1st, 2nd, 3rd, etc.
+  finalRating: string; // final rating after tournament
+  matchesPlayed: number;
+  matchesWon: number;
+  tournamentWinner: boolean;
+  earnedPoints: number;
+};
+
+export type PlayerRanking = {
+  userId: string;
+  currentRank: number; // overall rank (1 = highest)
+  totalPoints: number; // cumulative points from tournaments
+  tournamentsPlayed: number;
+  tournamentsWon: number;
+  ratingTrend: "up" | "down" | "stable";
+  lastUpdated: Timestamp;
+};

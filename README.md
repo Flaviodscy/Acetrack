@@ -12,11 +12,13 @@ The app now includes a backend repository layer. It saves match records locally 
 
 ## Firebase Setup
 
-1. Create a Firebase web app.
+1. Create a Firebase web app (or use the existing `acetrack-flavio` project).
 2. Copy `.env.example` to `.env.local`.
-3. Fill in the Firebase config values.
-4. Enable Firestore in Firebase.
+3. Fill in both `VITE_FIREBASE_*` and `EXPO_PUBLIC_FIREBASE_*` with the same Firebase web config.
+4. Enable Firestore and Auth (anonymous + email/password) in Firebase Console.
 5. Restart the dev server.
+
+Config is loaded from `src/config/firebaseEnv.ts`. Hardcoded credentials were removed from source — use `.env.local` locally and CI/hosting env vars in production.
 
 Initial Firestore collection:
 
